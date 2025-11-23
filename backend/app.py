@@ -13,11 +13,25 @@ if not os.path.exists(env_path):
 load_dotenv(env_path)
 
 # Konfiguracja ścieżki do frontendu
-FRONTEND_BUILD_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'frontend', 'build')
-if not os.path.exists(FRONTEND_BUILD_PATH):
-    FRONTEND_BUILD_PATH = None
+# W Heroku: uruchamiamy z root, więc frontend/build jest względem root
+# Lokalnie: backend/app.py, więc trzeba wyjść o poziom wyżej
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+FRONTEND_BUILD_PATH = os.path.join(BASE_DIR, 'frontend', 'build')
 
-app = Flask(__name__, static_folder=FRONTEND_BUILD_PATH, static_url_path='')
+# Debug: sprawdź czy folder istnieje
+if os.path.exists(FRONTEND_BUILD_PATH):
+    print(f"✓ Frontend build znaleziony w: {FRONTEND_BUILD_PATH}")
+else:
+    print(f"✗ Frontend build NIE znaleziony w: {FRONTEND_BUILD_PATH}")
+    print(f"  Aktualny katalog roboczy: {os.getcwd()}")
+    print(f"  BASE_DIR: {BASE_DIR}")
+    # Spróbuj alternatywną ścieżkę
+    alt_path = os.path.join(os.getcwd(), 'frontend', 'build')
+    if os.path.exists(alt_path):
+        FRONTEND_BUILD_PATH = alt_path
+        print(f"✓ Używam alternatywnej ścieżki: {FRONTEND_BUILD_PATH}")
+
+app = Flask(__name__, static_folder=FRONTEND_BUILD_PATH if os.path.exists(FRONTEND_BUILD_PATH) else None, static_url_path='')
 CORS(app)
 
 # Konfiguracja Jira
@@ -286,15 +300,41 @@ def get_project_time(project_key: str):
 @app.route('/<path:path>')
 def serve_frontend(path):
     """Serwuje frontend React"""
-    if app.static_folder and os.path.exists(app.static_folder):
-        if path != "" and os.path.exists(os.path.join(app.static_folder, path)):
-            return send_from_directory(app.static_folder, path)
-        elif os.path.exists(os.path.join(app.static_folder, 'index.html')):
-            return send_from_directory(app.static_folder, 'index.html')
+    # Nie serwuj plików API przez ten endpoint
+    if path.startswith('api/'):
+        return jsonify({'error': 'Not found'}), 404
+    
+    static_folder = app.static_folder
+    
+    # Jeśli nie ma static_folder, spróbuj znaleźć build
+    if not static_folder or not os.path.exists(static_folder):
+        static_folder = FRONTEND_BUILD_PATH
+    
+    if static_folder and os.path.exists(static_folder):
+        # Jeśli ścieżka jest pusta lub to katalog, zwróć index.html
+        if path == '' or path.endswith('/'):
+            index_path = os.path.join(static_folder, 'index.html')
+            if os.path.exists(index_path):
+                return send_from_directory(static_folder, 'index.html')
+        
+        # Spróbuj znaleźć plik
+        file_path = os.path.join(static_folder, path)
+        if os.path.exists(file_path) and os.path.isfile(file_path):
+            return send_from_directory(static_folder, path)
+        
+        # Jeśli plik nie istnieje, ale to nie jest API, zwróć index.html (SPA routing)
+        index_path = os.path.join(static_folder, 'index.html')
+        if os.path.exists(index_path):
+            return send_from_directory(static_folder, 'index.html')
+    
     # Jeśli frontend nie jest zbudowany, zwróć informację
     return jsonify({
         'message': 'Frontend nie jest dostępny. Upewnij się, że został zbudowany.',
-        'api_status': 'ok'
+        'api_status': 'ok',
+        'static_folder': static_folder,
+        'exists': os.path.exists(static_folder) if static_folder else False,
+        'current_dir': os.getcwd(),
+        'base_dir': BASE_DIR
     }), 200
 
 
