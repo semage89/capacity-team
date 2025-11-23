@@ -5,7 +5,8 @@
   "scripts": {
     "build": "cd frontend && npm install && npm run build",
     "start": "cd backend && python app.py",
-    "heroku-postbuild": "cd frontend && npm install && npm run build"
+    "postinstall": "cd frontend && npm install && npm run build",
+    "heroku-postbuild": "echo 'Building frontend...' && cd frontend && npm install && npm run build && echo 'Frontend build completed!'"
   },
   "cacheDirectories": [
     "frontend/node_modules"
