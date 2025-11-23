@@ -13,23 +13,32 @@ if not os.path.exists(env_path):
 load_dotenv(env_path)
 
 # Konfiguracja ścieżki do frontendu
-# W Heroku: uruchamiamy z root, więc frontend/build jest względem root
+# W Heroku: uruchamiamy z root (/app), więc frontend/build jest względem root
 # Lokalnie: backend/app.py, więc trzeba wyjść o poziom wyżej
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FRONTEND_BUILD_PATH = os.path.join(BASE_DIR, 'frontend', 'build')
 
-# Debug: sprawdź czy folder istnieje
-if os.path.exists(FRONTEND_BUILD_PATH):
-    print(f"✓ Frontend build znaleziony w: {FRONTEND_BUILD_PATH}")
-else:
-    print(f"✗ Frontend build NIE znaleziony w: {FRONTEND_BUILD_PATH}")
+# Spróbuj różne ścieżki
+possible_paths = [
+    FRONTEND_BUILD_PATH,  # Względem backend/
+    os.path.join(os.getcwd(), 'frontend', 'build'),  # Względem current dir
+    '/app/frontend/build',  # Absolutna ścieżka na Heroku
+]
+
+FRONTEND_BUILD_PATH = None
+for path in possible_paths:
+    if os.path.exists(path):
+        FRONTEND_BUILD_PATH = path
+        print(f"✓ Frontend build znaleziony w: {FRONTEND_BUILD_PATH}")
+        break
+
+if not FRONTEND_BUILD_PATH:
+    print(f"✗ Frontend build NIE znaleziony w żadnej z lokalizacji:")
+    for path in possible_paths:
+        print(f"  - {path} (istnieje: {os.path.exists(path)})")
     print(f"  Aktualny katalog roboczy: {os.getcwd()}")
     print(f"  BASE_DIR: {BASE_DIR}")
-    # Spróbuj alternatywną ścieżkę
-    alt_path = os.path.join(os.getcwd(), 'frontend', 'build')
-    if os.path.exists(alt_path):
-        FRONTEND_BUILD_PATH = alt_path
-        print(f"✓ Używam alternatywnej ścieżki: {FRONTEND_BUILD_PATH}")
+    print(f"  __file__: {__file__}")
 
 app = Flask(__name__, static_folder=FRONTEND_BUILD_PATH if os.path.exists(FRONTEND_BUILD_PATH) else None, static_url_path='')
 CORS(app)
