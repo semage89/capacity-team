@@ -39,8 +39,10 @@ if not FRONTEND_BUILD_PATH:
     print(f"  Aktualny katalog roboczy: {os.getcwd()}")
     print(f"  BASE_DIR: {BASE_DIR}")
     print(f"  __file__: {__file__}")
+    # Ustaw domyślną ścieżkę nawet jeśli nie istnieje - Flask to obsłuży
+    FRONTEND_BUILD_PATH = possible_paths[1]  # Użyj ścieżki względem current dir
 
-app = Flask(__name__, static_folder=FRONTEND_BUILD_PATH if os.path.exists(FRONTEND_BUILD_PATH) else None, static_url_path='')
+app = Flask(__name__, static_folder=FRONTEND_BUILD_PATH, static_url_path='')
 CORS(app)
 
 # Konfiguracja Jira
@@ -221,9 +223,15 @@ class TempoClient:
         return project_time
 
 
-# Inicjalizacja klientów
-jira_client = JiraClient(JIRA_URL, JIRA_AUTH) if JIRA_URL and JIRA_EMAIL and JIRA_API_TOKEN else None
-tempo_client = TempoClient(JIRA_URL, TEMPO_HEADERS) if JIRA_URL and TEMPO_API_TOKEN else None
+# Inicjalizacja klientów (z obsługą błędów)
+try:
+    jira_client = JiraClient(JIRA_URL, JIRA_AUTH) if JIRA_URL and JIRA_EMAIL and JIRA_API_TOKEN else None
+    tempo_client = TempoClient(JIRA_URL, TEMPO_HEADERS) if JIRA_URL and TEMPO_API_TOKEN else None
+    print(f"✓ Klienci zainicjalizowani: Jira={jira_client is not None}, Tempo={tempo_client is not None}")
+except Exception as e:
+    print(f"✗ Błąd podczas inicjalizacji klientów: {e}")
+    jira_client = None
+    tempo_client = None
 
 
 @app.route('/api/health', methods=['GET'])
