@@ -6,7 +6,7 @@
     "build": "cd frontend && npm install && npm run build",
     "start": "cd backend && python app.py",
     "heroku-prebuild": "echo '=== Heroku Prebuild: Installing frontend dependencies ===' && cd frontend && npm install",
-    "heroku-postbuild": "echo '=== Heroku Postbuild: Building frontend ===' && cd frontend && npm run build && echo '=== Frontend build completed! ==='"
+    "heroku-postbuild": "echo '=== Heroku Postbuild: Building frontend ===' && cd frontend && npm run build && echo '=== Frontend build completed! ===' && ls -la frontend/build/ || echo '=== Build directory check failed ==='"
   },
   "cacheDirectories": [
     "frontend/node_modules"
@@ -14,6 +14,7 @@
   "engines": {
     "node": "18.x",
     "npm": "9.x"
-  }
+  },
+  "dependencies": {}
 }
 
