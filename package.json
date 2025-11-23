@@ -6,7 +6,7 @@
     "build": "cd frontend && npm install && npm run build",
     "start": "cd backend && python app.py",
     "heroku-prebuild": "echo '=== Heroku Prebuild ===' && pwd && ls -la",
-    "heroku-postbuild": "echo '=== Heroku Postbuild ===' && if [ -d frontend ]; then cd frontend && npm install && npm run build && echo 'Build completed'; else echo 'Frontend dir not found'; fi"
+    "heroku-postbuild": "echo '=== Heroku Postbuild ===' && if [ -d frontend ]; then cd frontend && npm ci --only=production=false && NODE_OPTIONS=--max-old-space-size=4096 GENERATE_SOURCEMAP=false INLINE_RUNTIME_CHUNK=false npm run build && echo 'Build completed'; else echo 'Frontend dir not found'; fi"
   },
   "cacheDirectories": [
     "frontend/node_modules"

@@ -30,6 +30,15 @@
     },
     "FLASK_ENV": {
       "value": "production"
+    },
+    "NODE_OPTIONS": {
+      "value": "--max-old-space-size=4096"
+    },
+    "GENERATE_SOURCEMAP": {
+      "value": "false"
+    },
+    "INLINE_RUNTIME_CHUNK": {
+      "value": "false"
     }
   }
 }

@@ -23,7 +23,7 @@ if [ -d "frontend" ]; then
     
     echo ""
     echo "=== Building frontend ==="
-    npm run build
+    NODE_OPTIONS=--max-old-space-size=4096 GENERATE_SOURCEMAP=false INLINE_RUNTIME_CHUNK=false npm run build
     
     echo ""
     echo "=== Checking build output ==="
