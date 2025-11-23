@@ -3,10 +3,10 @@
   "version": "1.0.0",
   "description": "Capacity Team Planner - Planowanie pojemności zespołu z Jira i Tempo",
   "scripts": {
-    "build": "cd frontend && npm install && npm run build",
+    "build": "./build.sh",
     "start": "cd backend && python app.py",
-    "heroku-prebuild": "echo '=== Heroku Prebuild ===' && pwd && ls -la && if [ -d frontend ]; then echo 'Frontend dir exists' && cd frontend && npm install; else echo 'Frontend dir not found'; fi",
-    "heroku-postbuild": "echo '=== Heroku Postbuild ===' && pwd && ls -la && if [ -d frontend ]; then echo 'Building frontend...' && cd frontend && npm run build && echo '=== Build completed ===' && ls -la build/; else echo 'Frontend dir not found, skipping build'; fi"
+    "heroku-prebuild": "echo '=== Heroku Prebuild ===' && pwd && ls -la",
+    "heroku-postbuild": "./build.sh"
   },
   "cacheDirectories": [
     "frontend/node_modules"
