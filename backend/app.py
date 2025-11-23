@@ -6,7 +6,11 @@ import requests
 from datetime import datetime, timedelta
 from typing import List, Dict, Optional
 
-load_dotenv()
+# Załaduj .env z katalogu głównego projektu (dla Heroku) lub z backend (dla lokalnego)
+env_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), '.env')
+if not os.path.exists(env_path):
+    env_path = os.path.join(os.path.dirname(__file__), '.env')
+load_dotenv(env_path)
 
 # Konfiguracja ścieżki do frontendu
 FRONTEND_BUILD_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'frontend', 'build')
