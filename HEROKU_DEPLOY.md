@@ -61,5 +61,18 @@ heroku logs --tail
 
 ### Frontend nie działa
 - Sprawdź czy frontend został zbudowany: `heroku run ls frontend/build`
-- Sprawdź logi aplikacji
+- Sprawdź logi builda: `heroku logs --tail` (szukaj "heroku-postbuild")
+- Sprawdź czy buildpack Node.js jest pierwszy: `heroku buildpacks`
+- Upewnij się, że `heroku-postbuild` w package.json jest poprawny
+- Sprawdź logi aplikacji: `heroku logs --tail`
+
+### Debugowanie frontendu na Heroku
+```bash
+# Sprawdź czy build istnieje
+heroku run bash
+ls -la frontend/build/
+
+# Sprawdź logi z informacjami o ścieżkach
+heroku logs --tail | grep "Frontend build"
+```
 
