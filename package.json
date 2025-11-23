@@ -1,0 +1,15 @@
+{
+  "name": "capacity-team-planner",
+  "version": "1.0.0",
+  "description": "Capacity Team Planner - Planowanie pojemności zespołu z Jira i Tempo",
+  "scripts": {
+    "build": "cd frontend && npm install && npm run build",
+    "start": "cd backend && python app.py",
+    "heroku-postbuild": "cd frontend && npm install && npm run build"
+  },
+  "engines": {
+    "node": "18.x",
+    "npm": "9.x"
+  }
+}
+

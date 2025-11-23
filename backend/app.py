@@ -1,4 +1,4 @@
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
 from dotenv import load_dotenv
 import os
@@ -8,7 +8,12 @@ from typing import List, Dict, Optional
 
 load_dotenv()
 
-app = Flask(__name__)
+# Konfiguracja ścieżki do frontendu
+FRONTEND_BUILD_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'frontend', 'build')
+if not os.path.exists(FRONTEND_BUILD_PATH):
+    FRONTEND_BUILD_PATH = None
+
+app = Flask(__name__, static_folder=FRONTEND_BUILD_PATH, static_url_path='')
 CORS(app)
 
 # Konfiguracja Jira
@@ -271,6 +276,22 @@ def get_project_time(project_key: str):
         'total_hours': round(total_time, 2),
         'user_time': {k: round(v, 2) for k, v in user_time.items()}
     })
+
+
+@app.route('/', defaults={'path': ''})
+@app.route('/<path:path>')
+def serve_frontend(path):
+    """Serwuje frontend React"""
+    if app.static_folder and os.path.exists(app.static_folder):
+        if path != "" and os.path.exists(os.path.join(app.static_folder, path)):
+            return send_from_directory(app.static_folder, path)
+        elif os.path.exists(os.path.join(app.static_folder, 'index.html')):
+            return send_from_directory(app.static_folder, 'index.html')
+    # Jeśli frontend nie jest zbudowany, zwróć informację
+    return jsonify({
+        'message': 'Frontend nie jest dostępny. Upewnij się, że został zbudowany.',
+        'api_status': 'ok'
+    }), 200
 
 
 @app.route('/api/capacity', methods=['GET'])

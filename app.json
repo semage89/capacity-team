@@ -1,0 +1,36 @@
+{
+  "name": "Capacity Team Planner",
+  "description": "Aplikacja do planowania pojemności zespołu zintegrowana z Jira i Tempo",
+  "repository": "https://github.com/semage89/capacity-team",
+  "keywords": ["jira", "tempo", "capacity", "planning"],
+  "buildpacks": [
+    {
+      "url": "heroku/nodejs"
+    },
+    {
+      "url": "heroku/python"
+    }
+  ],
+  "env": {
+    "JIRA_URL": {
+      "description": "URL Twojej instancji Jira (np. https://your-domain.atlassian.net)",
+      "required": true
+    },
+    "JIRA_EMAIL": {
+      "description": "Twój email w Jira",
+      "required": true
+    },
+    "JIRA_API_TOKEN": {
+      "description": "Token API Jira",
+      "required": true
+    },
+    "TEMPO_API_TOKEN": {
+      "description": "Token API Tempo (opcjonalne)",
+      "required": false
+    },
+    "FLASK_ENV": {
+      "value": "production"
+    }
+  }
+}
+

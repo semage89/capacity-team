@@ -5,7 +5,9 @@ import CapacityDashboard from './components/CapacityDashboard';
 import ProjectTimeView from './components/ProjectTimeView';
 import Header from './components/Header';
 
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
+// W produkcji (Heroku) API jest na tym samym domenie, w dev na localhost:5000
+const API_BASE_URL = process.env.REACT_APP_API_URL || 
+  (process.env.NODE_ENV === 'production' ? '/api' : 'http://localhost:5000/api');
 
 function App() {
   const [projects, setProjects] = useState([]);
