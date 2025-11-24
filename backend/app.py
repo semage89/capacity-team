@@ -12,7 +12,29 @@ from .tempo_client import TempoClient
 from .sync_service import SyncService
 from .export_service import ExportService
 
-app = Flask(__name__, static_folder=None)
+# Konfiguracja ścieżki do frontendu
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+FRONTEND_BUILD_PATH = os.path.join(BASE_DIR, 'frontend', 'build')
+
+# Sprawdź różne możliwe lokalizacje frontendu
+possible_paths = [
+    FRONTEND_BUILD_PATH,
+    os.path.join(os.getcwd(), 'frontend', 'build'),
+    '/app/frontend/build',
+]
+
+FRONTEND_BUILD_PATH = None
+for path in possible_paths:
+    if os.path.exists(path):
+        FRONTEND_BUILD_PATH = path
+        print(f"✓ Frontend build znaleziony w: {FRONTEND_BUILD_PATH}")
+        break
+
+if not FRONTEND_BUILD_PATH:
+    print(f"⚠ Frontend build NIE znaleziony w żadnej z lokalizacji")
+    FRONTEND_BUILD_PATH = possible_paths[1]  # Fallback
+
+app = Flask(__name__, static_folder=FRONTEND_BUILD_PATH, static_url_path='')
 app.config.from_object(Config)
 CORS(app)
 
@@ -514,6 +536,47 @@ def export_allocations_pdf():
         mimetype='application/pdf',
         headers={'Content-Disposition': f'attachment; filename=allocations_{start_date}_{end_date}.pdf'}
     )
+
+
+# ========== Frontend Routing ==========
+
+@app.route('/', defaults={'path': ''})
+@app.route('/<path:path>')
+def serve_frontend(path):
+    """Serwuje frontend React"""
+    # Jeśli ścieżka zaczyna się od /api, zwróć 404 (to są endpointy API)
+    if path.startswith('api/'):
+        return jsonify({'error': 'Not found'}), 404
+    
+    static_folder = app.static_folder
+    
+    if not static_folder or not os.path.exists(static_folder):
+        static_folder = FRONTEND_BUILD_PATH
+    
+    if static_folder and os.path.exists(static_folder):
+        # Jeśli ścieżka jest pusta lub kończy się na /, zwróć index.html
+        if path == '' or path.endswith('/'):
+            index_path = os.path.join(static_folder, 'index.html')
+            if os.path.exists(index_path):
+                return send_from_directory(static_folder, 'index.html')
+        
+        # Sprawdź czy plik istnieje
+        file_path = os.path.join(static_folder, path)
+        if os.path.exists(file_path) and os.path.isfile(file_path):
+            return send_from_directory(static_folder, path)
+        
+        # Dla wszystkich innych ścieżek (SPA routing), zwróć index.html
+        index_path = os.path.join(static_folder, 'index.html')
+        if os.path.exists(index_path):
+            return send_from_directory(static_folder, 'index.html')
+    
+    # Fallback - zwróć informację o statusie
+    return jsonify({
+        'message': 'Frontend nie jest dostępny. Upewnij się, że został zbudowany.',
+        'api_status': 'ok',
+        'static_folder': static_folder,
+        'exists': os.path.exists(static_folder) if static_folder else False
+    }), 200
 
 
 if __name__ == '__main__':
