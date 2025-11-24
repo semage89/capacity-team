@@ -1,22 +1,13 @@
 {
-  "name": "capacity-team-planner",
+  "name": "team-capacity-planner",
   "version": "1.0.0",
-  "description": "Capacity Team Planner - Planowanie pojemności zespołu z Jira i Tempo",
+  "description": "Team Capacity Planner - Planowanie czasu pracy zespołu IT",
   "scripts": {
-    "build": "cd frontend && npm install && npm run build",
-    "start": "cd backend && python app.py",
     "heroku-prebuild": "echo '=== Heroku Prebuild ===' && pwd && ls -la",
-    "heroku-postbuild": "echo '=== Heroku Postbuild ===' && if [ -d frontend ]; then cd frontend && npm install && NODE_OPTIONS=--max-old-space-size=4096 GENERATE_SOURCEMAP=false INLINE_RUNTIME_CHUNK=false npm run build && echo 'Build completed'; else echo 'Frontend dir not found'; fi"
+    "heroku-postbuild": "echo '=== Heroku Postbuild ===' && if [ -d frontend ]; then cd frontend && npm install && npm run build && echo 'Build completed'; else echo 'Frontend dir not found'; fi"
   },
-  "cacheDirectories": [
-    "frontend/node_modules"
-  ],
   "engines": {
     "node": "18.x",
     "npm": "9.x"
-  },
-  "dependencies": {
-    "concurrently": "^8.2.2"
   }
 }
-

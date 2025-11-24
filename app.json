@@ -1,16 +1,8 @@
 {
-  "name": "Capacity Team Planner",
-  "description": "Aplikacja do planowania pojemności zespołu zintegrowana z Jira i Tempo",
-  "repository": "https://github.com/semage89/capacity-team",
-  "keywords": ["jira", "tempo", "capacity", "planning"],
-  "buildpacks": [
-    {
-      "url": "heroku/nodejs"
-    },
-    {
-      "url": "heroku/python"
-    }
-  ],
+  "name": "Team Capacity Planner",
+  "description": "Aplikacja do planowania czasu pracy zespołu IT z integracją Jira i Tempo",
+  "repository": "https://github.com/your-username/team-capacity-planner",
+  "keywords": ["jira", "tempo", "capacity", "planning", "team"],
   "env": {
     "JIRA_URL": {
       "description": "URL Twojej instancji Jira (np. https://your-domain.atlassian.net)",
@@ -28,21 +20,15 @@
       "description": "Token API Tempo (opcjonalne)",
       "required": false
     },
-    "FLASK_ENV": {
-      "value": "production"
-    },
-    "NODE_OPTIONS": {
-      "value": "--max-old-space-size=4096"
-    },
-    "GENERATE_SOURCEMAP": {
-      "value": "false"
-    },
-    "INLINE_RUNTIME_CHUNK": {
-      "value": "false"
+    "SYNC_INTERVAL_MINUTES": {
+      "description": "Interwał synchronizacji w minutach (domyślnie 60)",
+      "value": "60"
     }
   },
-  "addons": [
-    "heroku-postgresql:mini"
-  ]
+  "formation": {
+    "web": {
+      "quantity": 1,
+      "size": "basic"
+    }
+  }
 }
-
