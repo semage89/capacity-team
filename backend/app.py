@@ -287,6 +287,10 @@ def create_fte_assignment():
     
     # Sprawdź czy już istnieje
     assignment_date = datetime.fromisoformat(data['assignment_date']).date()
+    
+    # Blokuj weekendy (sobota = 5, niedziela = 6)
+    if assignment_date.weekday() >= 5:
+        return jsonify({'error': 'Nie można przypisywać FTE na weekendy (sobota i niedziela)'}), 400
     existing = FTEAssignment.query.filter_by(
         user_email=data['user_email'],
         project_key=data['project_key'],
@@ -377,9 +381,9 @@ def create_fte_range():
     current = start_date
     
     while current <= end_date:
-        # Pomiń weekendy (opcjonalnie - można usunąć jeśli chcesz wszystkie dni)
-        # if current.weekday() < 5:  # 0-4 to poniedziałek-piątek
-        existing = FTEAssignment.query.filter_by(
+        # Pomiń weekendy (sobota = 5, niedziela = 6)
+        if current.weekday() < 5:  # 0-4 to poniedziałek-piątek
+            existing = FTEAssignment.query.filter_by(
             user_email=data['user_email'],
             project_key=data['project_key'],
             assignment_date=current

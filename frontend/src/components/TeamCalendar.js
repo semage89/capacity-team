@@ -79,14 +79,10 @@ const TeamCalendar = () => {
   const loadAssignments = async () => {
     try {
       setLoading(true);
-      const params = {};
-      
-      if (filters.view_mode === 'single') {
-        params.assignment_date = filters.assignment_date;
-      } else {
-        params.start_date = filters.start_date;
-        params.end_date = filters.end_date;
-      }
+      const params = {
+        start_date: filters.start_date,
+        end_date: filters.end_date
+      };
 
       const response = await axios.get(`${API_BASE_URL}/fte`, { params });
       setAssignments(response.data);
@@ -118,12 +114,35 @@ const TeamCalendar = () => {
     );
   };
 
-  const getUserTotalFte = (userEmail, date) => {
-    const userAssignments = assignments.filter(a => 
+  const getUserAssignmentsForDate = (userEmail, date) => {
+    return assignments.filter(a => 
       a.user_email === userEmail && 
       a.assignment_date === date
     );
+  };
+
+  const getUserTotalFte = (userEmail, date) => {
+    const userAssignments = getUserAssignmentsForDate(userEmail, date);
     return userAssignments.reduce((sum, a) => sum + a.fte_value, 0);
+  };
+
+  const isWeekend = (date) => {
+    const day = new Date(date).getDay();
+    return day === 0 || day === 6; // 0 = niedziela, 6 = sobota
+  };
+
+  const generateDateRange = () => {
+    const dates = [];
+    const start = new Date(filters.start_date);
+    const end = new Date(filters.end_date);
+    const current = new Date(start);
+
+    while (current <= end) {
+      dates.push(new Date(current));
+      current.setDate(current.getDate() + 1);
+    }
+
+    return dates;
   };
 
   const handleCellEdit = async (userEmail, projectKey, date, newFte) => {
@@ -176,9 +195,30 @@ const TeamCalendar = () => {
     return '#e8f5e9'; // Zielony - OK
   };
 
-  const currentDate = filters.view_mode === 'single' 
-    ? filters.assignment_date 
-    : filters.start_date;
+  const dates = generateDateRange();
+  
+  // Grupuj użytkowników i ich przypisania
+  const userAssignmentsMap = {};
+  assignments.forEach(assignment => {
+    if (!userAssignmentsMap[assignment.user_email]) {
+      userAssignmentsMap[assignment.user_email] = {
+        user_email: assignment.user_email,
+        user_display_name: assignment.user_display_name,
+        dates: {}
+      };
+    }
+    const dateStr = assignment.assignment_date;
+    if (!userAssignmentsMap[assignment.user_email].dates[dateStr]) {
+      userAssignmentsMap[assignment.user_email].dates[dateStr] = [];
+    }
+    userAssignmentsMap[assignment.user_email].dates[dateStr].push(assignment);
+  });
+
+  // Pobierz wszystkich użytkowników (nawet bez przypisań)
+  const allUsers = users.map(u => ({
+    email: u.emailAddress || u.displayName,
+    displayName: u.displayName || u.emailAddress
+  }));
 
   return (
     <div className="team-calendar">
@@ -189,7 +229,7 @@ const TeamCalendar = () => {
           <div className="form-group">
             <label>Projekt:</label>
             <select 
-              value={filters.project_key} 
+              value={filters.project_key || ''} 
               onChange={(e) => setFilters({...filters, project_key: e.target.value})}
             >
               <option value="">Wszystkie projekty</option>
@@ -202,7 +242,7 @@ const TeamCalendar = () => {
           <div className="form-group">
             <label>Użytkownik:</label>
             <select 
-              value={filters.user_email} 
+              value={filters.user_email || ''} 
               onChange={(e) => setFilters({...filters, user_email: e.target.value})}
             >
               <option value="">Wszyscy użytkownicy</option>
@@ -251,86 +291,123 @@ const TeamCalendar = () => {
 
       {loading ? (
         <div className="loading">Ładowanie kalendarza...</div>
-      ) : calendarData && calendarData.calendar ? (
+      ) : (
         <div className="calendar-container">
           <div className="calendar-table-wrapper">
             <table className="calendar-table">
               <thead>
                 <tr>
                   <th className="sticky-col">Użytkownik</th>
-                  {dates.map((date, idx) => (
-                    <th key={idx} className={date.getDay() === 0 || date.getDay() === 6 ? 'weekend' : ''}>
-                      {date.toLocaleDateString('pl-PL', { weekday: 'short', day: 'numeric', month: 'short' })}
-                    </th>
-                  ))}
+                  {dates.map((date, idx) => {
+                    const isWeekendDay = isWeekend(date);
+                    return (
+                      <th key={idx} className={isWeekendDay ? 'weekend' : ''}>
+                        {date.toLocaleDateString('pl-PL', { weekday: 'short', day: 'numeric', month: 'short' })}
+                      </th>
+                    );
+                  })}
                 </tr>
               </thead>
               <tbody>
-                {calendarData.calendar.map((userData, userIdx) => (
-                  <tr key={userIdx}>
-                    <td className="sticky-col user-name">
-                      {userData.user_display_name}
-                    </td>
-                    {dates.map((date, dateIdx) => {
-                      const dateStr = date.toISOString().split('T')[0];
-                      const dayData = userData.days[dateStr];
-                      const isEditing = editingCell === `${userData.user_email}_${dateStr}`;
-
-                      if (isEditing) {
-                        return (
-                          <td key={dateIdx} className="editing-cell">
-                            <input
-                              type="number"
-                              min="0"
-                              max="1"
-                              step="0.1"
-                              defaultValue={dayData?.total_fte || 0}
-                              onBlur={(e) => {
-                                const projectKey = dayData?.projects[0]?.project_key || filters.project_key || projects[0]?.key;
-                                if (projectKey) {
-                                  handleCellEdit(userData.user_email, dateStr, projectKey, e.target.value);
-                                }
-                              }}
-                              onKeyPress={(e) => {
-                                if (e.key === 'Enter') {
-                                  e.target.blur();
-                                }
-                              }}
-                              autoFocus
-                            />
-                          </td>
-                        );
-                      }
-
-                      const bgColor = dayData 
-                        ? getCellColor(dayData.total_fte, dayData.overloaded, dayData.underutilized)
-                        : '#f5f5f5';
-
-                      return (
-                        <td
-                          key={dateIdx}
-                          className={`calendar-cell ${dayData?.overloaded ? 'overloaded' : ''} ${dayData?.underutilized ? 'underutilized' : ''} ${date.getDay() === 0 || date.getDay() === 6 ? 'weekend' : ''}`}
-                          style={{ backgroundColor: bgColor }}
-                          onClick={() => setEditingCell(`${userData.user_email}_${dateStr}`)}
-                          title={dayData ? `${dayData.projects.map(p => `${p.project_name}: ${p.fte}`).join(', ')} (Total: ${dayData.total_fte})` : 'Brak przypisań'}
-                        >
-                          {dayData ? (
-                            <div className="cell-content">
-                              <div className="cell-fte">{dayData.total_fte.toFixed(1)}</div>
-                              {dayData.overloaded && <span className="overload-indicator">⚠️</span>}
-                              {dayData.underutilized && <span className="underutilized-indicator">ℹ️</span>}
-                              {dayData.projects.length > 1 && (
-                                <div className="project-count">{dayData.projects.length} proj.</div>
-                              )}
-                            </div>
-                          ) : (
-                            <div className="cell-content empty">-</div>
-                          )}
+                {allUsers
+                  .filter(u => !filters.user_email || u.email === filters.user_email)
+                  .map((user, userIdx) => {
+                    const userData = userAssignmentsMap[user.email] || {
+                      user_email: user.email,
+                      user_display_name: user.displayName,
+                      dates: {}
+                    };
+                    
+                    return (
+                      <tr key={userIdx}>
+                        <td className="sticky-col user-name">
+                          {userData.user_display_name}
                         </td>
-                      );
-                    })}
-                  </tr>
-                ))}
+                        {dates.map((date, dateIdx) => {
+                          const dateStr = date.toISOString().split('T')[0];
+                          const isWeekendDay = isWeekend(date);
+                          const dayAssignments = userData.dates[dateStr] || [];
+                          const filteredAssignments = filters.project_key 
+                            ? dayAssignments.filter(a => a.project_key === filters.project_key)
+                            : dayAssignments;
+                          const totalFte = filteredAssignments.reduce((sum, a) => sum + a.fte_value, 0);
+                          const overloaded = totalFte > 1.0;
+                          const underutilized = totalFte < 0.8 && totalFte > 0;
+                          const isEditing = editingCell === `${user.email}_${dateStr}`;
+
+                          if (isWeekendDay) {
+                            return (
+                              <td key={dateIdx} className="weekend blocked" title="Weekend - przypisania zablokowane">
+                                <div className="cell-content empty">-</div>
+                              </td>
+                            );
+                          }
+
+                          if (isEditing) {
+                            return (
+                              <td key={dateIdx} className="editing-cell">
+                                <select
+                                  defaultValue=""
+                                  onChange={(e) => {
+                                    const projectKey = e.target.value;
+                                    if (projectKey) {
+                                      const project = projects.find(p => p.key === projectKey);
+                                      const existing = filteredAssignments.find(a => a.project_key === projectKey);
+                                      const fteValue = existing ? existing.fte_value : 0;
+                                      const input = prompt(`Podaj FTE dla projektu ${project.name}:`, fteValue);
+                                      if (input !== null) {
+                                        handleCellEdit(user.email, dateStr, projectKey, parseFloat(input) || 0);
+                                      }
+                                    }
+                                    setEditingCell(null);
+                                  }}
+                                  onBlur={() => setEditingCell(null)}
+                                  autoFocus
+                                >
+                                  <option value="">Wybierz projekt...</option>
+                                  {projects.map(p => (
+                                    <option key={p.key} value={p.key}>{p.name}</option>
+                                  ))}
+                                </select>
+                              </td>
+                            );
+                          }
+
+                          const bgColor = getCellColor(totalFte, overloaded, underutilized);
+
+                          return (
+                            <td
+                              key={dateIdx}
+                              className={`calendar-cell ${overloaded ? 'overloaded' : ''} ${underutilized ? 'underutilized' : ''}`}
+                              style={{ backgroundColor: bgColor }}
+                              onClick={() => setEditingCell(`${user.email}_${dateStr}`)}
+                              title={filteredAssignments.length > 0 
+                                ? filteredAssignments.map(a => `${a.project_name}: ${a.fte_value}`).join(', ') + ` (Total: ${totalFte.toFixed(2)})`
+                                : 'Brak przypisań - kliknij aby dodać'}
+                            >
+                              {filteredAssignments.length > 0 ? (
+                                <div className="cell-content">
+                                  <div className="projects-list">
+                                    {filteredAssignments.map((assignment, idx) => (
+                                      <div key={idx} className="project-item">
+                                        <span className="project-name">{assignment.project_name}</span>
+                                        <span className="project-fte">{assignment.fte_value}</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                  <div className="cell-total">Total: {totalFte.toFixed(2)}</div>
+                                  {overloaded && <span className="overload-indicator">⚠️</span>}
+                                  {underutilized && <span className="underutilized-indicator">ℹ️</span>}
+                                </div>
+                              ) : (
+                                <div className="cell-content empty">-</div>
+                              )}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    );
+                  })}
               </tbody>
             </table>
           </div>

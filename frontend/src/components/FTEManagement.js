@@ -91,6 +91,22 @@ const FTEManagement = () => {
       return;
     }
 
+    // Sprawdź weekendy
+    if (assignmentMode === 'single') {
+      const date = new Date(selectedDate);
+      if (date.getDay() === 0 || date.getDay() === 6) {
+        alert('Nie można przypisywać FTE na weekendy (sobota i niedziela)');
+        return;
+      }
+    } else {
+      const start = new Date(selectedStartDate);
+      const end = new Date(selectedEndDate);
+      if (start.getDay() === 0 || start.getDay() === 6 || end.getDay() === 0 || end.getDay() === 6) {
+        alert('Nie można przypisywać FTE na weekendy (sobota i niedziela)');
+        return;
+      }
+    }
+
     const project = projects.find(p => p.key === selectedProject);
     const user = users.find(u => u.emailAddress === selectedUser || u.displayName === selectedUser);
 
@@ -195,7 +211,16 @@ const FTEManagement = () => {
               <input
                 type="date"
                 value={selectedDate}
-                onChange={(e) => setSelectedDate(e.target.value)}
+                onChange={(e) => {
+                  const date = new Date(e.target.value);
+                  const day = date.getDay();
+                  if (day === 0 || day === 6) {
+                    alert('Nie można przypisywać FTE na weekendy (sobota i niedziela)');
+                    return;
+                  }
+                  setSelectedDate(e.target.value);
+                }}
+                min={new Date().toISOString().split('T')[0]}
               />
             </div>
           ) : (
@@ -205,7 +230,16 @@ const FTEManagement = () => {
                 <input
                   type="date"
                   value={selectedStartDate}
-                  onChange={(e) => setSelectedStartDate(e.target.value)}
+                  onChange={(e) => {
+                    const date = new Date(e.target.value);
+                    const day = date.getDay();
+                    if (day === 0 || day === 6) {
+                      alert('Nie można przypisywać FTE na weekendy (sobota i niedziela)');
+                      return;
+                    }
+                    setSelectedStartDate(e.target.value);
+                  }}
+                  min={new Date().toISOString().split('T')[0]}
                 />
               </div>
               <div className="form-group">
@@ -213,7 +247,16 @@ const FTEManagement = () => {
                 <input
                   type="date"
                   value={selectedEndDate}
-                  onChange={(e) => setSelectedEndDate(e.target.value)}
+                  onChange={(e) => {
+                    const date = new Date(e.target.value);
+                    const day = date.getDay();
+                    if (day === 0 || day === 6) {
+                      alert('Nie można przypisywać FTE na weekendy (sobota i niedziela)');
+                      return;
+                    }
+                    setSelectedEndDate(e.target.value);
+                  }}
+                  min={selectedStartDate || new Date().toISOString().split('T')[0]}
                 />
               </div>
             </>
