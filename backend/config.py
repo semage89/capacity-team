@@ -8,10 +8,18 @@ load_dotenv()
 class Config:
     """Konfiguracja aplikacji"""
     # Database
-    SQLALCHEMY_DATABASE_URI = os.getenv('DATABASE_URL', 'sqlite:///team_capacity.db')
-    if SQLALCHEMY_DATABASE_URI.startswith('postgres://'):
-        SQLALCHEMY_DATABASE_URI = SQLALCHEMY_DATABASE_URI.replace('postgres://', 'postgresql://', 1)
+    DATABASE_URL = os.getenv('DATABASE_URL', 'sqlite:///team_capacity.db')
+    
+    # Popraw format postgres:// na postgresql://
+    if DATABASE_URL.startswith('postgres://'):
+        DATABASE_URL = DATABASE_URL.replace('postgres://', 'postgresql://', 1)
+    
+    SQLALCHEMY_DATABASE_URI = DATABASE_URL
     SQLALCHEMY_TRACK_MODIFICATIONS = False
+    SQLALCHEMY_ENGINE_OPTIONS = {
+        'pool_pre_ping': True,  # Sprawdza połączenie przed użyciem
+        'pool_recycle': 300,    # Recykling połączeń co 5 minut
+    }
     
     # Jira Configuration
     JIRA_URL = os.getenv('JIRA_URL')

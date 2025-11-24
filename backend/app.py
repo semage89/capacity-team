@@ -18,6 +18,10 @@ CORS(app)
 
 # Inicjalizacja bazy danych
 db.init_app(app)
+app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+    'pool_pre_ping': True,
+    'pool_recycle': 300,
+}
 
 # Inicjalizacja klientów
 jira_client = None
@@ -41,7 +45,13 @@ def init_clients():
 
 # Inicjalizuj klientów przy starcie
 with app.app_context():
-    db.create_all()
+    try:
+        db.create_all()
+        print("✓ Baza danych zainicjalizowana")
+    except Exception as e:
+        print(f"⚠ Błąd podczas inicjalizacji bazy danych: {e}")
+        print("Aplikacja będzie działać, ale niektóre funkcje mogą być niedostępne")
+    
     init_clients()
 
 
