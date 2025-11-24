@@ -32,7 +32,7 @@ import { Delete as DeleteIcon, Save as SaveIcon, Refresh as RefreshIcon } from '
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
-import { pl } from 'date-fns/locale';
+import { pl } from 'date-fns/locale/pl';
 
 const API_BASE_URL = process.env.REACT_APP_API_URL || 
   (process.env.NODE_ENV === 'production' ? '/api' : 'http://localhost:5000/api');
