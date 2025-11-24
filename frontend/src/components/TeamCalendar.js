@@ -68,7 +68,9 @@ const TeamCalendar = () => {
   const loadUsers = async () => {
     try {
       const response = await axios.get(`${API_BASE_URL}/users`);
-      const sorted = response.data.sort((a, b) => (a.displayName || a.emailAddress || '').localeCompare(b.displayName || b.emailAddress || '', 'pl'));
+      // Filtruj tylko aktywnych użytkowników
+      const activeUsers = response.data.filter(u => u.active !== false);
+      const sorted = activeUsers.sort((a, b) => (a.displayName || a.emailAddress || '').localeCompare(b.displayName || b.emailAddress || '', 'pl'));
       setUsers(sorted);
       setFilteredUsers(sorted);
     } catch (err) {
@@ -346,29 +348,73 @@ const TeamCalendar = () => {
                           if (isEditing) {
                             return (
                               <td key={dateIdx} className="editing-cell">
-                                <select
-                                  defaultValue=""
-                                  onChange={(e) => {
-                                    const projectKey = e.target.value;
-                                    if (projectKey) {
-                                      const project = projects.find(p => p.key === projectKey);
-                                      const existing = filteredAssignments.find(a => a.project_key === projectKey);
-                                      const fteValue = existing ? existing.fte_value : 0;
-                                      const input = prompt(`Podaj FTE dla projektu ${project.name}:`, fteValue);
-                                      if (input !== null) {
-                                        handleCellEdit(user.email, dateStr, projectKey, parseFloat(input) || 0);
-                                      }
-                                    }
-                                    setEditingCell(null);
-                                  }}
-                                  onBlur={() => setEditingCell(null)}
-                                  autoFocus
-                                >
-                                  <option value="">Wybierz projekt...</option>
-                                  {projects.map(p => (
-                                    <option key={p.key} value={p.key}>{p.name}</option>
+                                <div style={{ padding: '8px' }}>
+                                  <div style={{ marginBottom: '8px', fontSize: '0.85rem', fontWeight: 'bold' }}>
+                                    Edycja przypisań:
+                                  </div>
+                                  {filteredAssignments.map((assignment, idx) => (
+                                    <div key={idx} style={{ marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                      <span style={{ flex: 1, fontSize: '0.75rem' }}>{assignment.project_name}:</span>
+                                      <input
+                                        type="number"
+                                        min="0"
+                                        max="1"
+                                        step="0.1"
+                                        value={assignment.fte_value}
+                                        onChange={(e) => {
+                                          const newFte = parseFloat(e.target.value) || 0;
+                                          handleCellEdit(user.email, dateStr, assignment.project_key, newFte);
+                                        }}
+                                        style={{ width: '50px', padding: '2px', fontSize: '0.75rem' }}
+                                        onClick={(e) => e.stopPropagation()}
+                                      />
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          if (window.confirm(`Usunąć przypisanie dla ${assignment.project_name}?`)) {
+                                            handleCellEdit(user.email, dateStr, assignment.project_key, 0);
+                                          }
+                                        }}
+                                        style={{ fontSize: '0.7rem', padding: '2px 4px' }}
+                                      >
+                                        ×
+                                      </button>
+                                    </div>
                                   ))}
-                                </select>
+                                  <select
+                                    defaultValue=""
+                                    onChange={(e) => {
+                                      const projectKey = e.target.value;
+                                      if (projectKey) {
+                                        const project = projects.find(p => p.key === projectKey);
+                                        const existing = filteredAssignments.find(a => a.project_key === projectKey);
+                                        const fteValue = existing ? existing.fte_value : 0.5;
+                                        const input = prompt(`Podaj FTE dla projektu ${project.name}:`, fteValue);
+                                        if (input !== null) {
+                                          handleCellEdit(user.email, dateStr, projectKey, parseFloat(input) || 0);
+                                        }
+                                      }
+                                    }}
+                                    onClick={(e) => e.stopPropagation()}
+                                    style={{ width: '100%', marginTop: '4px', fontSize: '0.75rem' }}
+                                  >
+                                    <option value="">+ Dodaj projekt...</option>
+                                    {projects
+                                      .filter(p => !filteredAssignments.find(a => a.project_key === p.key))
+                                      .map(p => (
+                                        <option key={p.key} value={p.key}>{p.name}</option>
+                                      ))}
+                                  </select>
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setEditingCell(null);
+                                    }}
+                                    style={{ marginTop: '4px', width: '100%', fontSize: '0.75rem', padding: '4px' }}
+                                  >
+                                    Zamknij
+                                  </button>
+                                </div>
                               </td>
                             );
                           }
@@ -389,7 +435,16 @@ const TeamCalendar = () => {
                                 <div className="cell-content">
                                   <div className="projects-list">
                                     {filteredAssignments.map((assignment, idx) => (
-                                      <div key={idx} className="project-item">
+                                      <div 
+                                        key={idx} 
+                                        className="project-item"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setEditingCell(`${user.email}_${dateStr}`);
+                                        }}
+                                        style={{ cursor: 'pointer' }}
+                                        title={`Kliknij aby edytować ${assignment.project_name}`}
+                                      >
                                         <span className="project-name">{assignment.project_name}</span>
                                         <span className="project-fte">{assignment.fte_value}</span>
                                       </div>

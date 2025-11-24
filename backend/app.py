@@ -6,7 +6,7 @@ import requests
 from datetime import datetime, timedelta
 from typing import List, Dict, Optional
 from .models import db, FTEAssignment
-from sqlalchemy import func, and_
+from sqlalchemy import func, and_, extract
 
 # Załaduj .env z katalogu głównego projektu (dla Heroku) lub z backend (dla lokalnego)
 env_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), '.env')
@@ -813,12 +813,42 @@ def get_project_users(project_key: str):
 
 @app.route('/api/users', methods=['GET'])
 def get_users():
-    """Pobiera wszystkich użytkowników"""
+    """Pobiera wszystkich aktywnych użytkowników"""
     if not jira_client:
         return jsonify({'error': 'Jira nie jest skonfigurowane'}), 500
     
     users = jira_client.get_all_users()
-    return jsonify(users)
+    # Dodatkowe filtrowanie aktywnych (podwójna walidacja)
+    active_users = [u for u in users if u.get('active', True) is True]
+    return jsonify(active_users)
+
+
+@app.route('/api/fte/cleanup-weekends', methods=['POST'])
+def cleanup_weekend_assignments():
+    """Usuwa wszystkie przypisania FTE na weekendy (sobota i niedziela)"""
+    try:
+        # Znajdź wszystkie przypisania na weekendy
+        all_assignments = FTEAssignment.query.all()
+        weekend_assignments = []
+        
+        for assignment in all_assignments:
+            day_of_week = assignment.assignment_date.weekday()
+            if day_of_week >= 5:  # Sobota (5) lub niedziela (6)
+                weekend_assignments.append(assignment)
+        
+        # Usuń przypisania na weekendy
+        for assignment in weekend_assignments:
+            db.session.delete(assignment)
+        
+        db.session.commit()
+        
+        return jsonify({
+            'message': f'Usunięto {len(weekend_assignments)} przypisań na weekendy',
+            'deleted_count': len(weekend_assignments)
+        }), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
 
 
 @app.route('/api/time/project/<project_key>', methods=['GET'])

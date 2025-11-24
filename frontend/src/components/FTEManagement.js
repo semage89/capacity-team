@@ -82,7 +82,9 @@ const FTEManagement = () => {
   const loadUsers = async () => {
     try {
       const response = await axios.get(`${API_BASE_URL}/users`);
-      const sorted = response.data.sort((a, b) => 
+      // Filtruj tylko aktywnych użytkowników (backup filtrowania)
+      const activeUsers = response.data.filter(u => u.active !== false);
+      const sorted = activeUsers.sort((a, b) => 
         (a.displayName || a.emailAddress || '').localeCompare(b.displayName || b.emailAddress || '', 'pl')
       );
       setUsers(sorted);

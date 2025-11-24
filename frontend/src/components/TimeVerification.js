@@ -36,7 +36,9 @@ const TimeVerification = () => {
   const loadUsers = async () => {
     try {
       const response = await axios.get(`${API_BASE_URL}/users`);
-      setUsers(response.data);
+      // Filtruj tylko aktywnych użytkowników
+      const activeUsers = response.data.filter(u => u.active !== false);
+      setUsers(activeUsers);
     } catch (err) {
       console.error('Błąd podczas ładowania użytkowników:', err);
     }
