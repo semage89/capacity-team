@@ -1,6 +1,38 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import './FTEManagement.css';
+import {
+  Box,
+  Typography,
+  Paper,
+  Grid,
+  TextField,
+  Select,
+  MenuItem,
+  FormControl,
+  InputLabel,
+  Button,
+  Radio,
+  RadioGroup,
+  FormControlLabel,
+  FormLabel,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  IconButton,
+  Chip,
+  Alert,
+  CircularProgress,
+  Card,
+  CardContent,
+} from '@mui/material';
+import { Delete as DeleteIcon, Save as SaveIcon, Refresh as RefreshIcon } from '@mui/icons-material';
+import { DatePicker } from '@mui/x-date-pickers/DatePicker';
+import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
+import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
+import { pl } from 'date-fns/locale';
 
 const API_BASE_URL = process.env.REACT_APP_API_URL || 
   (process.env.NODE_ENV === 'production' ? '/api' : 'http://localhost:5000/api');
@@ -12,16 +44,18 @@ const FTEManagement = () => {
   const [loading, setLoading] = useState(true);
   const [selectedProject, setSelectedProject] = useState('');
   const [selectedUser, setSelectedUser] = useState('');
-  const [filterUser, setFilterUser] = useState(''); // Osobny stan dla filtra w tabeli
-  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
-  const [selectedStartDate, setSelectedStartDate] = useState(new Date().toISOString().split('T')[0]);
-  const [selectedEndDate, setSelectedEndDate] = useState(new Date().toISOString().split('T')[0]);
+  const [filterUser, setFilterUser] = useState('');
+  const [selectedDate, setSelectedDate] = useState(new Date());
+  const [selectedStartDate, setSelectedStartDate] = useState(new Date());
+  const [selectedEndDate, setSelectedEndDate] = useState(new Date());
   const [fteValue, setFteValue] = useState(1.0);
-  const [assignmentMode, setAssignmentMode] = useState('single'); // 'single' or 'range'
+  const [assignmentMode, setAssignmentMode] = useState('single');
   const [dateRange, setDateRange] = useState({
-    start: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-    end: new Date().toISOString().split('T')[0]
+    start: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
+    end: new Date()
   });
+  const [successMessage, setSuccessMessage] = useState('');
+  const [errorMessage, setErrorMessage] = useState('');
 
   useEffect(() => {
     loadProjects();
@@ -41,6 +75,7 @@ const FTEManagement = () => {
       setProjects(sorted);
     } catch (err) {
       console.error('Błąd podczas ładowania projektów:', err);
+      setErrorMessage('Błąd podczas ładowania projektów');
     }
   };
 
@@ -53,6 +88,7 @@ const FTEManagement = () => {
       setUsers(sorted);
     } catch (err) {
       console.error('Błąd podczas ładowania użytkowników:', err);
+      setErrorMessage('Błąd podczas ładowania użytkowników');
     }
   };
 
@@ -60,8 +96,8 @@ const FTEManagement = () => {
     try {
       setLoading(true);
       const params = {
-        start_date: dateRange.start,
-        end_date: dateRange.end
+        start_date: dateRange.start.toISOString().split('T')[0],
+        end_date: dateRange.end.toISOString().split('T')[0]
       };
       if (selectedProject) params.project_key = selectedProject;
       if (filterUser) params.user_email = filterUser;
@@ -70,39 +106,41 @@ const FTEManagement = () => {
       setAssignments(response.data);
     } catch (err) {
       console.error('Błąd podczas ładowania przypisań FTE:', err);
+      setErrorMessage('Błąd podczas ładowania przypisań');
     } finally {
       setLoading(false);
     }
   };
 
   const handleSave = async () => {
+    setSuccessMessage('');
+    setErrorMessage('');
+
     if (!selectedProject || !selectedUser) {
-      alert('Proszę wybrać projekt i użytkownika');
+      setErrorMessage('Proszę wybrać projekt i użytkownika');
       return;
     }
 
     if (assignmentMode === 'single' && !selectedDate) {
-      alert('Proszę wybrać datę');
+      setErrorMessage('Proszę wybrać datę');
       return;
     }
 
     if (assignmentMode === 'range' && (!selectedStartDate || !selectedEndDate)) {
-      alert('Proszę wybrać zakres dat');
+      setErrorMessage('Proszę wybrać zakres dat');
       return;
     }
 
     // Sprawdź weekendy
     if (assignmentMode === 'single') {
-      const date = new Date(selectedDate);
-      if (date.getDay() === 0 || date.getDay() === 6) {
-        alert('Nie można przypisywać FTE na weekendy (sobota i niedziela)');
+      if (selectedDate.getDay() === 0 || selectedDate.getDay() === 6) {
+        setErrorMessage('Nie można przypisywać FTE na weekendy (sobota i niedziela)');
         return;
       }
     } else {
-      const start = new Date(selectedStartDate);
-      const end = new Date(selectedEndDate);
-      if (start.getDay() === 0 || start.getDay() === 6 || end.getDay() === 0 || end.getDay() === 6) {
-        alert('Nie można przypisywać FTE na weekendy (sobota i niedziela)');
+      if (selectedStartDate.getDay() === 0 || selectedStartDate.getDay() === 6 || 
+          selectedEndDate.getDay() === 0 || selectedEndDate.getDay() === 6) {
+        setErrorMessage('Nie można przypisywać FTE na weekendy (sobota i niedziela)');
         return;
       }
     }
@@ -117,28 +155,28 @@ const FTEManagement = () => {
           user_display_name: user?.displayName || selectedUser,
           project_key: selectedProject,
           project_name: project?.name || selectedProject,
-          assignment_date: selectedDate,
+          assignment_date: selectedDate.toISOString().split('T')[0],
           fte_value: parseFloat(fteValue)
         });
-        alert('Przypisanie FTE zostało zapisane');
+        setSuccessMessage('Przypisanie FTE zostało zapisane');
       } else {
         const response = await axios.post(`${API_BASE_URL}/fte/range`, {
           user_email: selectedUser,
           user_display_name: user?.displayName || selectedUser,
           project_key: selectedProject,
           project_name: project?.name || selectedProject,
-          start_date: selectedStartDate,
-          end_date: selectedEndDate,
+          start_date: selectedStartDate.toISOString().split('T')[0],
+          end_date: selectedEndDate.toISOString().split('T')[0],
           fte_value: parseFloat(fteValue)
         });
-        alert(`Utworzono ${response.data.created} przypisań, zaktualizowano ${response.data.updated}`);
+        setSuccessMessage(`Utworzono ${response.data.created} przypisań, zaktualizowano ${response.data.updated}`);
       }
 
       loadAssignments();
       setFteValue(1.0);
     } catch (err) {
       console.error('Błąd podczas zapisywania:', err);
-      alert('Błąd podczas zapisywania przypisania FTE: ' + (err.response?.data?.error || err.message));
+      setErrorMessage('Błąd podczas zapisywania przypisania FTE: ' + (err.response?.data?.error || err.message));
     }
   };
 
@@ -147,317 +185,355 @@ const FTEManagement = () => {
 
     try {
       await axios.delete(`${API_BASE_URL}/fte/${id}`);
+      setSuccessMessage('Przypisanie zostało usunięte');
       loadAssignments();
     } catch (err) {
       console.error('Błąd podczas usuwania:', err);
-      alert('Błąd podczas usuwania przypisania');
+      setErrorMessage('Błąd podczas usuwania przypisania');
     }
   };
 
+  // Grupuj przypisania
+  const grouped = {};
+  assignments.forEach(assignment => {
+    const key = `${assignment.user_email}_${assignment.project_key}`;
+    if (!grouped[key]) {
+      grouped[key] = {
+        user_email: assignment.user_email,
+        user_display_name: assignment.user_display_name,
+        project_key: assignment.project_key,
+        project_name: assignment.project_name,
+        dates: [],
+        assignments: []
+      };
+    }
+    grouped[key].dates.push(assignment.assignment_date);
+    grouped[key].assignments.push(assignment);
+  });
+
+  // Sortuj daty i znajdź zakresy
+  Object.keys(grouped).forEach(key => {
+    const group = grouped[key];
+    group.dates.sort();
+    
+    const ranges = [];
+    let currentRange = { start: group.dates[0], end: group.dates[0], fte: group.assignments[0].fte_value };
+    
+    for (let i = 1; i < group.dates.length; i++) {
+      const prevDate = new Date(group.dates[i - 1]);
+      const currDate = new Date(group.dates[i]);
+      const daysDiff = (currDate - prevDate) / (1000 * 60 * 60 * 24);
+      const currAssignment = group.assignments.find(a => a.assignment_date === group.dates[i]);
+      
+      if (daysDiff === 1 && currAssignment.fte_value === currentRange.fte) {
+        currentRange.end = group.dates[i];
+      } else {
+        ranges.push(currentRange);
+        currentRange = { 
+          start: group.dates[i], 
+          end: group.dates[i], 
+          fte: currAssignment.fte_value 
+        };
+      }
+    }
+    ranges.push(currentRange);
+    group.ranges = ranges;
+  });
+
+  const groupedArray = Object.values(grouped).sort((a, b) => {
+    const nameCompare = a.user_display_name.localeCompare(b.user_display_name, 'pl');
+    if (nameCompare !== 0) return nameCompare;
+    return a.project_name.localeCompare(b.project_name, 'pl');
+  });
+
   return (
-    <div className="fte-management">
-      <h2>Zarządzanie FTE</h2>
+    <LocalizationProvider dateAdapter={AdapterDateFns} adapterLocale={pl}>
+      <Box>
+        <Typography variant="h4" gutterBottom sx={{ mb: 3, fontWeight: 600 }}>
+          Zarządzanie FTE
+        </Typography>
 
-      <div className="fte-form">
-        <h3>Nowe przypisanie FTE</h3>
-        
-        <div className="mode-selector">
-          <label>
-            <input
-              type="radio"
-              value="single"
-              checked={assignmentMode === 'single'}
-              onChange={(e) => setAssignmentMode(e.target.value)}
-            />
-            Pojedynczy dzień
-          </label>
-          <label>
-            <input
-              type="radio"
-              value="range"
-              checked={assignmentMode === 'range'}
-              onChange={(e) => setAssignmentMode(e.target.value)}
-            />
-            Okres czasu
-          </label>
-        </div>
-
-        <div className="form-row">
-          <div className="form-group">
-            <label>Projekt:</label>
-            <select value={selectedProject} onChange={(e) => setSelectedProject(e.target.value)}>
-              <option value="">Wybierz projekt</option>
-              {projects.map(p => (
-                <option key={p.key} value={p.key}>{p.name} ({p.key})</option>
-              ))}
-            </select>
-          </div>
-
-          <div className="form-group">
-            <label>Użytkownik:</label>
-            <select value={selectedUser} onChange={(e) => setSelectedUser(e.target.value)}>
-              <option value="">Wybierz użytkownika</option>
-              {users.map(u => (
-                <option key={u.accountId || u.emailAddress} value={u.emailAddress || u.displayName}>
-                  {u.displayName} {u.emailAddress ? `(${u.emailAddress})` : ''}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {assignmentMode === 'single' ? (
-            <div className="form-group">
-              <label>Data:</label>
-              <input
-                type="date"
-                value={selectedDate}
-                onChange={(e) => {
-                  const date = new Date(e.target.value);
-                  const day = date.getDay();
-                  if (day === 0 || day === 6) {
-                    alert('Nie można przypisywać FTE na weekendy (sobota i niedziela)');
-                    return;
-                  }
-                  setSelectedDate(e.target.value);
-                }}
-                min={new Date().toISOString().split('T')[0]}
-              />
-            </div>
-          ) : (
-            <>
-              <div className="form-group">
-                <label>Od:</label>
-                <input
-                  type="date"
-                  value={selectedStartDate}
-                  onChange={(e) => {
-                    const date = new Date(e.target.value);
-                    const day = date.getDay();
-                    if (day === 0 || day === 6) {
-                      alert('Nie można przypisywać FTE na weekendy (sobota i niedziela)');
-                      return;
-                    }
-                    setSelectedStartDate(e.target.value);
-                  }}
-                  min={new Date().toISOString().split('T')[0]}
-                />
-              </div>
-              <div className="form-group">
-                <label>Do:</label>
-                <input
-                  type="date"
-                  value={selectedEndDate}
-                  onChange={(e) => {
-                    const date = new Date(e.target.value);
-                    const day = date.getDay();
-                    if (day === 0 || day === 6) {
-                      alert('Nie można przypisywać FTE na weekendy (sobota i niedziela)');
-                      return;
-                    }
-                    setSelectedEndDate(e.target.value);
-                  }}
-                  min={selectedStartDate || new Date().toISOString().split('T')[0]}
-                />
-              </div>
-            </>
-          )}
-
-          <div className="form-group">
-            <label>FTE (0.0 - 1.0):</label>
-            <input
-              type="number"
-              min="0"
-              max="1"
-              step="0.1"
-              value={fteValue}
-              onChange={(e) => setFteValue(e.target.value)}
-            />
-          </div>
-
-          <button className="btn-primary" onClick={handleSave}>
-            Zapisz
-          </button>
-        </div>
-      </div>
-
-      <div className="fte-filters">
-        <h3>Filtry</h3>
-        <div className="form-row">
-          <div className="form-group">
-            <label>Użytkownik:</label>
-            <select 
-              value={filterUser} 
-              onChange={(e) => {
-                setFilterUser(e.target.value);
-              }}
-            >
-              <option value="">Wszyscy użytkownicy</option>
-              {users.map(u => (
-                <option key={u.accountId || u.emailAddress} value={u.emailAddress || u.displayName}>
-                  {u.displayName} {u.emailAddress ? `(${u.emailAddress})` : ''}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="form-group">
-            <label>Od:</label>
-            <input
-              type="date"
-              value={dateRange.start}
-              onChange={(e) => setDateRange({...dateRange, start: e.target.value})}
-            />
-          </div>
-          <div className="form-group">
-            <label>Do:</label>
-            <input
-              type="date"
-              value={dateRange.end}
-              onChange={(e) => setDateRange({...dateRange, end: e.target.value})}
-            />
-          </div>
-          <button onClick={loadAssignments}>Odśwież</button>
-        </div>
-      </div>
-
-      <div className="fte-list">
-        <h3>Przypisania FTE</h3>
-        {loading ? (
-          <div className="loading">Ładowanie...</div>
-        ) : (
-          (() => {
-            // Grupuj przypisania po użytkowniku i projekcie
-            const grouped = {};
-            assignments.forEach(assignment => {
-              const key = `${assignment.user_email}_${assignment.project_key}`;
-              if (!grouped[key]) {
-                grouped[key] = {
-                  user_email: assignment.user_email,
-                  user_display_name: assignment.user_display_name,
-                  project_key: assignment.project_key,
-                  project_name: assignment.project_name,
-                  dates: [],
-                  assignments: []
-                };
-              }
-              grouped[key].dates.push(assignment.assignment_date);
-              grouped[key].assignments.push(assignment);
-            });
-
-            // Sortuj daty i znajdź zakresy
-            Object.keys(grouped).forEach(key => {
-              const group = grouped[key];
-              group.dates.sort();
-              
-              // Znajdź ciągłe zakresy dat
-              const ranges = [];
-              let currentRange = { start: group.dates[0], end: group.dates[0], fte: group.assignments[0].fte_value };
-              
-              for (let i = 1; i < group.dates.length; i++) {
-                const prevDate = new Date(group.dates[i - 1]);
-                const currDate = new Date(group.dates[i]);
-                const daysDiff = (currDate - prevDate) / (1000 * 60 * 60 * 24);
-                const currAssignment = group.assignments.find(a => a.assignment_date === group.dates[i]);
-                
-                if (daysDiff === 1 && currAssignment.fte_value === currentRange.fte) {
-                  // Ciągły zakres z tym samym FTE
-                  currentRange.end = group.dates[i];
-                } else {
-                  // Nowy zakres
-                  ranges.push(currentRange);
-                  currentRange = { 
-                    start: group.dates[i], 
-                    end: group.dates[i], 
-                    fte: currAssignment.fte_value 
-                  };
-                }
-              }
-              ranges.push(currentRange);
-              
-              group.ranges = ranges;
-            });
-
-            const groupedArray = Object.values(grouped).sort((a, b) => {
-              const nameCompare = a.user_display_name.localeCompare(b.user_display_name, 'pl');
-              if (nameCompare !== 0) return nameCompare;
-              return a.project_name.localeCompare(b.project_name, 'pl');
-            });
-
-            return (
-              <table>
-                <thead>
-                  <tr>
-                    <th>Użytkownik</th>
-                    <th>Projekt</th>
-                    <th>Okres</th>
-                    <th>FTE</th>
-                    <th>Capacity (h/dzień)</th>
-                    <th>Akcje</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {groupedArray.length === 0 ? (
-                    <tr>
-                      <td colSpan="6" className="no-data">Brak przypisań FTE w wybranym okresie</td>
-                    </tr>
-                  ) : (
-                    groupedArray.map((group, groupIdx) => (
-                      <React.Fragment key={groupIdx}>
-                        {group.ranges.map((range, rangeIdx) => {
-                          const startDate = new Date(range.start);
-                          const endDate = new Date(range.end);
-                          const daysCount = Math.floor((endDate - startDate) / (1000 * 60 * 60 * 24)) + 1;
-                          const assignment = group.assignments.find(a => a.assignment_date === range.start);
-                          
-                          return (
-                            <tr key={`${groupIdx}-${rangeIdx}`}>
-                              {rangeIdx === 0 && (
-                                <td rowSpan={group.ranges.length} className="user-cell">
-                                  {group.user_display_name}
-                                </td>
-                              )}
-                              {rangeIdx === 0 && (
-                                <td rowSpan={group.ranges.length} className="project-cell">
-                                  {group.project_name} ({group.project_key})
-                                </td>
-                              )}
-                              <td>
-                                {startDate.toLocaleDateString('pl-PL')} - {endDate.toLocaleDateString('pl-PL')}
-                                {daysCount > 1 && <span className="days-count"> ({daysCount} dni)</span>}
-                              </td>
-                              <td>{range.fte}</td>
-                              <td>{(range.fte * 8).toFixed(1)}h</td>
-                              <td>
-                                <button 
-                                  className="btn-danger"
-                                  onClick={() => {
-                                    if (window.confirm('Czy na pewno chcesz usunąć wszystkie przypisania w tym zakresie?')) {
-                                      group.assignments
-                                        .filter(a => {
-                                          const aDate = new Date(a.assignment_date);
-                                          return aDate >= startDate && aDate <= endDate;
-                                        })
-                                        .forEach(a => handleDelete(a.id));
-                                    }
-                                  }}
-                                >
-                                  Usuń
-                                </button>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </React.Fragment>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            );
-          })()
+        {successMessage && (
+          <Alert severity="success" sx={{ mb: 2 }} onClose={() => setSuccessMessage('')}>
+            {successMessage}
+          </Alert>
         )}
-      </div>
-    </div>
+
+        {errorMessage && (
+          <Alert severity="error" sx={{ mb: 2 }} onClose={() => setErrorMessage('')}>
+            {errorMessage}
+          </Alert>
+        )}
+
+        <Card sx={{ mb: 3 }}>
+          <CardContent>
+            <Typography variant="h6" gutterBottom sx={{ mb: 2 }}>
+              Nowe przypisanie FTE
+            </Typography>
+
+            <FormControl component="fieldset" sx={{ mb: 3 }}>
+              <FormLabel component="legend">Tryb przypisania</FormLabel>
+              <RadioGroup
+                row
+                value={assignmentMode}
+                onChange={(e) => setAssignmentMode(e.target.value)}
+              >
+                <FormControlLabel value="single" control={<Radio />} label="Pojedynczy dzień" />
+                <FormControlLabel value="range" control={<Radio />} label="Okres czasu" />
+              </RadioGroup>
+            </FormControl>
+
+            <Grid container spacing={3}>
+              <Grid item xs={12} sm={6} md={4}>
+                <FormControl fullWidth>
+                  <InputLabel>Projekt</InputLabel>
+                  <Select
+                    value={selectedProject}
+                    onChange={(e) => setSelectedProject(e.target.value)}
+                    label="Projekt"
+                  >
+                    <MenuItem value="">Wybierz projekt</MenuItem>
+                    {projects.map(p => (
+                      <MenuItem key={p.key} value={p.key}>
+                        {p.name} ({p.key})
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              </Grid>
+
+              <Grid item xs={12} sm={6} md={4}>
+                <FormControl fullWidth>
+                  <InputLabel>Użytkownik</InputLabel>
+                  <Select
+                    value={selectedUser}
+                    onChange={(e) => setSelectedUser(e.target.value)}
+                    label="Użytkownik"
+                  >
+                    <MenuItem value="">Wybierz użytkownika</MenuItem>
+                    {users.map(u => (
+                      <MenuItem key={u.accountId || u.emailAddress} value={u.emailAddress || u.displayName}>
+                        {u.displayName} {u.emailAddress ? `(${u.emailAddress})` : ''}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              </Grid>
+
+              {assignmentMode === 'single' ? (
+                <Grid item xs={12} sm={6} md={4}>
+                  <DatePicker
+                    label="Data"
+                    value={selectedDate}
+                    onChange={(newValue) => {
+                      if (newValue && (newValue.getDay() === 0 || newValue.getDay() === 6)) {
+                        setErrorMessage('Nie można przypisywać FTE na weekendy');
+                        return;
+                      }
+                      setSelectedDate(newValue);
+                    }}
+                    shouldDisableDate={(date) => date.getDay() === 0 || date.getDay() === 6}
+                    renderInput={(params) => <TextField {...params} fullWidth />}
+                  />
+                </Grid>
+              ) : (
+                <>
+                  <Grid item xs={12} sm={6} md={4}>
+                    <DatePicker
+                      label="Od"
+                      value={selectedStartDate}
+                      onChange={(newValue) => {
+                        if (newValue && (newValue.getDay() === 0 || newValue.getDay() === 6)) {
+                          setErrorMessage('Nie można przypisywać FTE na weekendy');
+                          return;
+                        }
+                        setSelectedStartDate(newValue);
+                      }}
+                      shouldDisableDate={(date) => date.getDay() === 0 || date.getDay() === 6}
+                      renderInput={(params) => <TextField {...params} fullWidth />}
+                    />
+                  </Grid>
+                  <Grid item xs={12} sm={6} md={4}>
+                    <DatePicker
+                      label="Do"
+                      value={selectedEndDate}
+                      onChange={(newValue) => {
+                        if (newValue && (newValue.getDay() === 0 || newValue.getDay() === 6)) {
+                          setErrorMessage('Nie można przypisywać FTE na weekendy');
+                          return;
+                        }
+                        setSelectedEndDate(newValue);
+                      }}
+                      shouldDisableDate={(date) => date.getDay() === 0 || date.getDay() === 6}
+                      minDate={selectedStartDate}
+                      renderInput={(params) => <TextField {...params} fullWidth />}
+                    />
+                  </Grid>
+                </>
+              )}
+
+              <Grid item xs={12} sm={6} md={4}>
+                <TextField
+                  fullWidth
+                  label="FTE (0.0 - 1.0)"
+                  type="number"
+                  inputProps={{ min: 0, max: 1, step: 0.1 }}
+                  value={fteValue}
+                  onChange={(e) => setFteValue(e.target.value)}
+                />
+              </Grid>
+
+              <Grid item xs={12}>
+                <Button
+                  variant="contained"
+                  startIcon={<SaveIcon />}
+                  onClick={handleSave}
+                  size="large"
+                >
+                  Zapisz
+                </Button>
+              </Grid>
+            </Grid>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+              <Typography variant="h6">
+                Przypisania FTE
+              </Typography>
+              <Box sx={{ display: 'flex', gap: 2 }}>
+                <FormControl size="small" sx={{ minWidth: 200 }}>
+                  <InputLabel>Filtruj użytkownika</InputLabel>
+                  <Select
+                    value={filterUser}
+                    onChange={(e) => setFilterUser(e.target.value)}
+                    label="Filtruj użytkownika"
+                  >
+                    <MenuItem value="">Wszyscy użytkownicy</MenuItem>
+                    {users.map(u => (
+                      <MenuItem key={u.accountId || u.emailAddress} value={u.emailAddress || u.displayName}>
+                        {u.displayName}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+                <Box sx={{ display: 'flex', gap: 1 }}>
+                  <DatePicker
+                    label="Od"
+                    value={dateRange.start}
+                    onChange={(newValue) => setDateRange({...dateRange, start: newValue})}
+                    renderInput={(params) => <TextField {...params} size="small" sx={{ width: 150 }} />}
+                  />
+                  <DatePicker
+                    label="Do"
+                    value={dateRange.end}
+                    onChange={(newValue) => setDateRange({...dateRange, end: newValue})}
+                    renderInput={(params) => <TextField {...params} size="small" sx={{ width: 150 }} />}
+                  />
+                  <Button
+                    variant="outlined"
+                    startIcon={<RefreshIcon />}
+                    onClick={loadAssignments}
+                    size="small"
+                  >
+                    Odśwież
+                  </Button>
+                </Box>
+              </Box>
+            </Box>
+
+            {loading ? (
+              <Box sx={{ display: 'flex', justifyContent: 'center', p: 3 }}>
+                <CircularProgress />
+              </Box>
+            ) : (
+              <TableContainer>
+                <Table>
+                  <TableHead>
+                    <TableRow>
+                      <TableCell><strong>Użytkownik</strong></TableCell>
+                      <TableCell><strong>Projekt</strong></TableCell>
+                      <TableCell><strong>Okres</strong></TableCell>
+                      <TableCell><strong>FTE</strong></TableCell>
+                      <TableCell><strong>Capacity (h/dzień)</strong></TableCell>
+                      <TableCell><strong>Akcje</strong></TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {groupedArray.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={6} align="center" sx={{ py: 3 }}>
+                          <Typography color="text.secondary">
+                            Brak przypisań FTE w wybranym okresie
+                          </Typography>
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      groupedArray.map((group, groupIdx) => (
+                        <React.Fragment key={groupIdx}>
+                          {group.ranges.map((range, rangeIdx) => {
+                            const startDate = new Date(range.start);
+                            const endDate = new Date(range.end);
+                            const daysCount = Math.floor((endDate - startDate) / (1000 * 60 * 60 * 24)) + 1;
+                            const assignment = group.assignments.find(a => a.assignment_date === range.start);
+                            
+                            return (
+                              <TableRow key={`${groupIdx}-${rangeIdx}`} hover>
+                                {rangeIdx === 0 && (
+                                  <TableCell rowSpan={group.ranges.length} sx={{ fontWeight: 600, bgcolor: 'action.hover' }}>
+                                    {group.user_display_name}
+                                  </TableCell>
+                                )}
+                                {rangeIdx === 0 && (
+                                  <TableCell rowSpan={group.ranges.length} sx={{ bgcolor: 'action.hover' }}>
+                                    {group.project_name} <Chip label={group.project_key} size="small" sx={{ ml: 1 }} />
+                                  </TableCell>
+                                )}
+                                <TableCell>
+                                  {startDate.toLocaleDateString('pl-PL')} - {endDate.toLocaleDateString('pl-PL')}
+                                  {daysCount > 1 && (
+                                    <Chip label={`${daysCount} dni`} size="small" sx={{ ml: 1 }} />
+                                  )}
+                                </TableCell>
+                                <TableCell>
+                                  <Chip label={range.fte} color="primary" size="small" />
+                                </TableCell>
+                                <TableCell>{(range.fte * 8).toFixed(1)}h</TableCell>
+                                <TableCell>
+                                  <IconButton
+                                    color="error"
+                                    size="small"
+                                    onClick={() => {
+                                      if (window.confirm('Czy na pewno chcesz usunąć wszystkie przypisania w tym zakresie?')) {
+                                        group.assignments
+                                          .filter(a => {
+                                            const aDate = new Date(a.assignment_date);
+                                            return aDate >= startDate && aDate <= endDate;
+                                          })
+                                          .forEach(a => handleDelete(a.id));
+                                      }
+                                    }}
+                                  >
+                                    <DeleteIcon />
+                                  </IconButton>
+                                </TableCell>
+                              </TableRow>
+                            );
+                          })}
+                        </React.Fragment>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+            )}
+          </CardContent>
+        </Card>
+      </Box>
+    </LocalizationProvider>
   );
 };
 
 export default FTEManagement;
-

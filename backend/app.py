@@ -108,7 +108,7 @@ class JiraClient:
             return []
     
     def get_all_users(self) -> List[Dict]:
-        """Pobiera wszystkich użytkowników z Jira"""
+        """Pobiera wszystkich aktywnych użytkowników z Jira"""
         try:
             users = []
             start_at = 0
@@ -120,7 +120,8 @@ class JiraClient:
                     auth=self.auth,
                     params={
                         'startAt': start_at,
-                        'maxResults': max_results
+                        'maxResults': max_results,
+                        'active': True  # Tylko aktywni użytkownicy
                     }
                 )
                 response.raise_for_status()
@@ -129,7 +130,9 @@ class JiraClient:
                 if not batch:
                     break
                 
-                users.extend(batch)
+                # Dodatkowe filtrowanie aktywnych (na wypadek gdyby API nie przefiltrowało)
+                active_users = [u for u in batch if u.get('active', True)]
+                users.extend(active_users)
                 start_at += max_results
                 
                 if len(batch) < max_results:
