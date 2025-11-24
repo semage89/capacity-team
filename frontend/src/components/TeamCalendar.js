@@ -1,6 +1,39 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import './TeamCalendar.css';
+import {
+  Box,
+  Typography,
+  Paper,
+  Grid,
+  Select,
+  MenuItem,
+  FormControl,
+  InputLabel,
+  Card,
+  CardContent,
+  Alert,
+  CircularProgress,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  Chip,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  TextField,
+  Button,
+  IconButton,
+  Tooltip,
+} from '@mui/material';
+import { DatePicker } from '@mui/x-date-pickers/DatePicker';
+import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
+import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
+import { pl } from 'date-fns/locale';
+import { Edit as EditIcon, Delete as DeleteIcon, Add as AddIcon } from '@mui/icons-material';
 
 const API_BASE_URL = process.env.REACT_APP_API_URL || 
   (process.env.NODE_ENV === 'production' ? '/api' : 'http://localhost:5000/api');
@@ -10,56 +43,28 @@ const TeamCalendar = () => {
   const [optimizationData, setOptimizationData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [filters, setFilters] = useState({
-    assignment_date: new Date().toISOString().split('T')[0],
-    start_date: new Date().toISOString().split('T')[0],
-    end_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-    view_mode: 'single' // 'single' or 'range'
+    start_date: new Date(),
+    end_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+    project_key: '',
+    user_email: ''
   });
   const [editingCell, setEditingCell] = useState(null);
+  const [editDialog, setEditDialog] = useState(null);
   const [projects, setProjects] = useState([]);
   const [users, setUsers] = useState([]);
-  const [projectSearch, setProjectSearch] = useState('');
-  const [userSearch, setUserSearch] = useState('');
-  const [filteredProjects, setFilteredProjects] = useState([]);
-  const [filteredUsers, setFilteredUsers] = useState([]);
 
   useEffect(() => {
     loadProjects();
     loadUsers();
     loadAssignments();
     loadOptimization();
-  }, [filters.assignment_date, filters.start_date, filters.end_date, filters.view_mode]);
-
-  useEffect(() => {
-    if (projectSearch) {
-      const filtered = projects.filter(p => 
-        (p.name || '').toLowerCase().includes(projectSearch.toLowerCase()) ||
-        (p.key || '').toLowerCase().includes(projectSearch.toLowerCase())
-      );
-      setFilteredProjects(filtered);
-    } else {
-      setFilteredProjects(projects);
-    }
-  }, [projectSearch, projects]);
-
-  useEffect(() => {
-    if (userSearch) {
-      const filtered = users.filter(u => 
-        (u.displayName || '').toLowerCase().includes(userSearch.toLowerCase()) ||
-        (u.emailAddress || '').toLowerCase().includes(userSearch.toLowerCase())
-      );
-      setFilteredUsers(filtered);
-    } else {
-      setFilteredUsers(users);
-    }
-  }, [userSearch, users]);
+  }, [filters.start_date, filters.end_date]);
 
   const loadProjects = async () => {
     try {
       const response = await axios.get(`${API_BASE_URL}/projects`);
       const sorted = response.data.sort((a, b) => (a.name || a.key).localeCompare(b.name || b.key, 'pl'));
       setProjects(sorted);
-      setFilteredProjects(sorted);
     } catch (err) {
       console.error('Błąd podczas ładowania projektów:', err);
     }
@@ -72,7 +77,6 @@ const TeamCalendar = () => {
       const activeUsers = response.data.filter(u => u.active !== false);
       const sorted = activeUsers.sort((a, b) => (a.displayName || a.emailAddress || '').localeCompare(b.displayName || b.emailAddress || '', 'pl'));
       setUsers(sorted);
-      setFilteredUsers(sorted);
     } catch (err) {
       console.error('Błąd podczas ładowania użytkowników:', err);
     }
@@ -82,9 +86,11 @@ const TeamCalendar = () => {
     try {
       setLoading(true);
       const params = {
-        start_date: filters.start_date,
-        end_date: filters.end_date
+        start_date: filters.start_date.toISOString().split('T')[0],
+        end_date: filters.end_date.toISOString().split('T')[0]
       };
+      if (filters.project_key) params.project_key = filters.project_key;
+      if (filters.user_email) params.user_email = filters.user_email;
 
       const response = await axios.get(`${API_BASE_URL}/fte`, { params });
       setAssignments(response.data);
@@ -98,8 +104,8 @@ const TeamCalendar = () => {
   const loadOptimization = async () => {
     try {
       const params = {
-        start_date: filters.view_mode === 'single' ? filters.assignment_date : filters.start_date,
-        end_date: filters.view_mode === 'single' ? filters.assignment_date : filters.end_date
+        start_date: filters.start_date.toISOString().split('T')[0],
+        end_date: filters.end_date.toISOString().split('T')[0]
       };
       const response = await axios.get(`${API_BASE_URL}/optimization/suggestions`, { params });
       setOptimizationData(response.data);
@@ -108,29 +114,53 @@ const TeamCalendar = () => {
     }
   };
 
-  const getAssignmentForUserProject = (userEmail, projectKey, date) => {
-    return assignments.find(a => 
-      a.user_email === userEmail && 
-      a.project_key === projectKey && 
-      a.assignment_date === date
-    );
-  };
+  const handleCellEdit = async (userEmail, projectKey, date, newFte) => {
+    try {
+      const project = projects.find(p => p.key === projectKey);
+      const user = users.find(u => u.emailAddress === userEmail || u.displayName === userEmail);
+      
+      if (!project || !user) {
+        alert('Nie znaleziono projektu lub użytkownika');
+        return;
+      }
 
-  const getUserAssignmentsForDate = (userEmail, date) => {
-    return assignments.filter(a => 
-      a.user_email === userEmail && 
-      a.assignment_date === date
-    );
-  };
+      const existing = assignments.find(a => 
+        a.user_email === userEmail && 
+        a.project_key === projectKey && 
+        a.assignment_date === date
+      );
 
-  const getUserTotalFte = (userEmail, date) => {
-    const userAssignments = getUserAssignmentsForDate(userEmail, date);
-    return userAssignments.reduce((sum, a) => sum + a.fte_value, 0);
+      if (parseFloat(newFte) === 0) {
+        if (existing) {
+          await axios.delete(`${API_BASE_URL}/fte/${existing.id}`);
+        }
+      } else if (existing) {
+        await axios.put(`${API_BASE_URL}/fte/${existing.id}`, {
+          fte_value: parseFloat(newFte)
+        });
+      } else {
+        await axios.post(`${API_BASE_URL}/fte`, {
+          user_email: userEmail,
+          user_display_name: user.displayName || userEmail,
+          project_key: projectKey,
+          project_name: project.name || projectKey,
+          assignment_date: date,
+          fte_value: parseFloat(newFte)
+        });
+      }
+
+      setEditDialog(null);
+      loadAssignments();
+      loadOptimization();
+    } catch (err) {
+      console.error('Błąd podczas edycji:', err);
+      alert('Błąd podczas zapisywania: ' + (err.response?.data?.error || err.message));
+    }
   };
 
   const isWeekend = (date) => {
     const day = new Date(date).getDay();
-    return day === 0 || day === 6; // 0 = niedziela, 6 = sobota
+    return day === 0 || day === 6;
   };
 
   const generateDateRange = () => {
@@ -147,54 +177,11 @@ const TeamCalendar = () => {
     return dates;
   };
 
-  const handleCellEdit = async (userEmail, projectKey, date, newFte) => {
-    try {
-      const project = projects.find(p => p.key === projectKey);
-      const user = users.find(u => u.emailAddress === userEmail || u.displayName === userEmail);
-      
-      if (!project || !user) {
-        alert('Nie znaleziono projektu lub użytkownika');
-        return;
-      }
-
-      const existing = getAssignmentForUserProject(userEmail, projectKey, date);
-
-      if (parseFloat(newFte) === 0) {
-        // Usuń przypisanie jeśli FTE = 0
-        if (existing) {
-          await axios.delete(`${API_BASE_URL}/fte/${existing.id}`);
-        }
-      } else if (existing) {
-        // Aktualizuj istniejące
-        await axios.put(`${API_BASE_URL}/fte/${existing.id}`, {
-          fte_value: parseFloat(newFte)
-        });
-      } else {
-        // Utwórz nowe
-        await axios.post(`${API_BASE_URL}/fte`, {
-          user_email: userEmail,
-          user_display_name: user.displayName || userEmail,
-          project_key: projectKey,
-          project_name: project.name || projectKey,
-          assignment_date: date,
-          fte_value: parseFloat(newFte)
-        });
-      }
-
-      setEditingCell(null);
-      loadAssignments();
-      loadOptimization();
-    } catch (err) {
-      console.error('Błąd podczas edycji:', err);
-      alert('Błąd podczas zapisywania: ' + (err.response?.data?.error || err.message));
-    }
-  };
-
-  const getCellColor = (fte, totalFte) => {
-    if (fte === 0) return '#f5f5f5'; // Szary - brak
-    if (totalFte > 1.0) return '#ffebee'; // Czerwony - przeciążenie
-    if (totalFte < 0.8 && totalFte > 0) return '#fff3e0'; // Pomarańczowy - niedobór
-    return '#e8f5e9'; // Zielony - OK
+  const getCellColor = (totalFte) => {
+    if (totalFte === 0) return '#f5f5f5';
+    if (totalFte > 1.0) return '#ffebee';
+    if (totalFte < 0.8 && totalFte > 0) return '#fff3e0';
+    return '#e8f5e9';
   };
 
   const dates = generateDateRange();
@@ -216,104 +203,135 @@ const TeamCalendar = () => {
     userAssignmentsMap[assignment.user_email].dates[dateStr].push(assignment);
   });
 
-  // Pobierz wszystkich użytkowników (nawet bez przypisań)
-  const allUsers = users.map(u => ({
-    email: u.emailAddress || u.displayName,
-    displayName: u.displayName || u.emailAddress
-  }));
+  const allUsers = users
+    .filter(u => !filters.user_email || (u.emailAddress || u.displayName) === filters.user_email)
+    .map(u => ({
+      email: u.emailAddress || u.displayName,
+      displayName: u.displayName || u.emailAddress
+    }));
 
   return (
-    <div className="team-calendar">
-      <h2>Kalendarz Zespołu</h2>
+    <LocalizationProvider dateAdapter={AdapterDateFns} adapterLocale={pl}>
+      <Box>
+        <Typography variant="h4" gutterBottom sx={{ mb: 3, fontWeight: 600 }}>
+          Kalendarz Zespołu
+        </Typography>
 
-      <div className="calendar-filters">
-        <div className="form-row">
-          <div className="form-group">
-            <label>Projekt:</label>
-            <select 
-              value={filters.project_key || ''} 
-              onChange={(e) => setFilters({...filters, project_key: e.target.value})}
-            >
-              <option value="">Wszystkie projekty</option>
-              {projects.map(p => (
-                <option key={p.key} value={p.key}>{p.name} ({p.key})</option>
-              ))}
-            </select>
-          </div>
+        <Card sx={{ mb: 3 }}>
+          <CardContent>
+            <Grid container spacing={2} alignItems="flex-end">
+              <Grid item xs={12} sm={6} md={3}>
+                <FormControl fullWidth>
+                  <InputLabel>Projekt</InputLabel>
+                  <Select
+                    value={filters.project_key || ''}
+                    onChange={(e) => setFilters({...filters, project_key: e.target.value})}
+                    label="Projekt"
+                  >
+                    <MenuItem value="">Wszystkie projekty</MenuItem>
+                    {projects.map(p => (
+                      <MenuItem key={p.key} value={p.key}>
+                        {p.name} ({p.key})
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              </Grid>
 
-          <div className="form-group">
-            <label>Użytkownik:</label>
-            <select 
-              value={filters.user_email || ''} 
-              onChange={(e) => setFilters({...filters, user_email: e.target.value})}
-            >
-              <option value="">Wszyscy użytkownicy</option>
-              {users.map(u => (
-                <option key={u.accountId || u.emailAddress} value={u.emailAddress || u.displayName}>
-                  {u.displayName} {u.emailAddress ? `(${u.emailAddress})` : ''}
-                </option>
-              ))}
-            </select>
-          </div>
+              <Grid item xs={12} sm={6} md={3}>
+                <FormControl fullWidth>
+                  <InputLabel>Użytkownik</InputLabel>
+                  <Select
+                    value={filters.user_email || ''}
+                    onChange={(e) => setFilters({...filters, user_email: e.target.value})}
+                    label="Użytkownik"
+                  >
+                    <MenuItem value="">Wszyscy użytkownicy</MenuItem>
+                    {users.map(u => (
+                      <MenuItem key={u.accountId || u.emailAddress} value={u.emailAddress || u.displayName}>
+                        {u.displayName} {u.emailAddress ? `(${u.emailAddress})` : ''}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              </Grid>
 
-          <div className="form-group">
-            <label>Od:</label>
-            <input
-              type="date"
-              value={filters.start_date}
-              onChange={(e) => setFilters({...filters, start_date: e.target.value})}
-            />
-          </div>
+              <Grid item xs={12} sm={6} md={3}>
+                <DatePicker
+                  label="Od"
+                  value={filters.start_date}
+                  onChange={(newValue) => setFilters({...filters, start_date: newValue})}
+                  slotProps={{ textField: { fullWidth: true } }}
+                />
+              </Grid>
 
-          <div className="form-group">
-            <label>Do:</label>
-            <input
-              type="date"
-              value={filters.end_date}
-              onChange={(e) => setFilters({...filters, end_date: e.target.value})}
-            />
-          </div>
-        </div>
-      </div>
+              <Grid item xs={12} sm={6} md={3}>
+                <DatePicker
+                  label="Do"
+                  value={filters.end_date}
+                  onChange={(newValue) => setFilters({...filters, end_date: newValue})}
+                  slotProps={{ textField: { fullWidth: true } }}
+                />
+              </Grid>
+            </Grid>
+          </CardContent>
+        </Card>
 
-      {optimizationData && (
-        <div className="optimization-alerts">
-          {optimizationData.summary.total_overloaded_days > 0 && (
-            <div className="alert alert-danger">
-              ⚠️ Wykryto {optimizationData.summary.total_overloaded_days} dni z przeciążeniem zasobów
-            </div>
-          )}
-          {optimizationData.summary.total_underutilized_days > 0 && (
-            <div className="alert alert-warning">
-              ℹ️ Wykryto {optimizationData.summary.total_underutilized_days} dni z niedoborem wykorzystania
-            </div>
-          )}
-        </div>
-      )}
+        {optimizationData && (
+          <Box sx={{ mb: 2 }}>
+            {optimizationData.summary.total_overloaded_days > 0 && (
+              <Alert severity="error" sx={{ mb: 1 }}>
+                ⚠️ Wykryto {optimizationData.summary.total_overloaded_days} dni z przeciążeniem zasobów
+              </Alert>
+            )}
+            {optimizationData.summary.total_underutilized_days > 0 && (
+              <Alert severity="warning">
+                ℹ️ Wykryto {optimizationData.summary.total_underutilized_days} dni z niedoborem wykorzystania
+              </Alert>
+            )}
+          </Box>
+        )}
 
-      {loading ? (
-        <div className="loading">Ładowanie kalendarza...</div>
-      ) : (
-        <div className="calendar-container">
-          <div className="calendar-table-wrapper">
-            <table className="calendar-table">
-              <thead>
-                <tr>
-                  <th className="sticky-col">Użytkownik</th>
-                  {dates.map((date, idx) => {
-                    const isWeekendDay = isWeekend(date);
-                    return (
-                      <th key={idx} className={isWeekendDay ? 'weekend' : ''}>
-                        {date.toLocaleDateString('pl-PL', { weekday: 'short', day: 'numeric', month: 'short' })}
-                      </th>
-                    );
-                  })}
-                </tr>
-              </thead>
-              <tbody>
-                {allUsers
-                  .filter(u => !filters.user_email || u.email === filters.user_email)
-                  .map((user, userIdx) => {
+        {loading ? (
+          <Box sx={{ display: 'flex', justifyContent: 'center', p: 3 }}>
+            <CircularProgress />
+          </Box>
+        ) : (
+          <Paper sx={{ overflow: 'auto' }}>
+            <TableContainer>
+              <Table stickyHeader size="small">
+                <TableHead>
+                  <TableRow>
+                    <TableCell sx={{ position: 'sticky', left: 0, zIndex: 10, bgcolor: 'background.paper', minWidth: 150 }}>
+                      <strong>Użytkownik</strong>
+                    </TableCell>
+                    {dates.map((date, idx) => {
+                      const isWeekendDay = isWeekend(date);
+                      return (
+                        <TableCell
+                          key={idx}
+                          align="center"
+                          sx={{
+                            minWidth: 100,
+                            bgcolor: isWeekendDay ? 'action.hover' : 'background.paper',
+                            color: isWeekendDay ? 'text.secondary' : 'text.primary'
+                          }}
+                        >
+                          <Box>
+                            <Typography variant="caption" display="block">
+                              {date.toLocaleDateString('pl-PL', { weekday: 'short' })}
+                            </Typography>
+                            <Typography variant="caption" display="block">
+                              {date.toLocaleDateString('pl-PL', { day: 'numeric', month: 'short' })}
+                            </Typography>
+                          </Box>
+                        </TableCell>
+                      );
+                    })}
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {allUsers.map((user, userIdx) => {
                     const userData = userAssignmentsMap[user.email] || {
                       user_email: user.email,
                       user_display_name: user.displayName,
@@ -321,10 +339,18 @@ const TeamCalendar = () => {
                     };
                     
                     return (
-                      <tr key={userIdx}>
-                        <td className="sticky-col user-name">
+                      <TableRow key={userIdx}>
+                        <TableCell
+                          sx={{
+                            position: 'sticky',
+                            left: 0,
+                            zIndex: 9,
+                            bgcolor: 'background.paper',
+                            fontWeight: 600
+                          }}
+                        >
                           {userData.user_display_name}
-                        </td>
+                        </TableCell>
                         {dates.map((date, dateIdx) => {
                           const dateStr = date.toISOString().split('T')[0];
                           const isWeekendDay = isWeekend(date);
@@ -335,166 +361,167 @@ const TeamCalendar = () => {
                           const totalFte = filteredAssignments.reduce((sum, a) => sum + a.fte_value, 0);
                           const overloaded = totalFte > 1.0;
                           const underutilized = totalFte < 0.8 && totalFte > 0;
-                          const isEditing = editingCell === `${user.email}_${dateStr}`;
 
                           if (isWeekendDay) {
                             return (
-                              <td key={dateIdx} className="weekend blocked" title="Weekend - przypisania zablokowane">
-                                <div className="cell-content empty">-</div>
-                              </td>
+                              <TableCell
+                                key={dateIdx}
+                                sx={{
+                                  bgcolor: '#f5f5f5',
+                                  opacity: 0.5,
+                                  cursor: 'not-allowed'
+                                }}
+                              >
+                                <Typography variant="caption" color="text.secondary">
+                                  -
+                                </Typography>
+                              </TableCell>
                             );
                           }
-
-                          if (isEditing) {
-                            return (
-                              <td key={dateIdx} className="editing-cell">
-                                <div style={{ padding: '8px' }}>
-                                  <div style={{ marginBottom: '8px', fontSize: '0.85rem', fontWeight: 'bold' }}>
-                                    Edycja przypisań:
-                                  </div>
-                                  {filteredAssignments.map((assignment, idx) => (
-                                    <div key={idx} style={{ marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                      <span style={{ flex: 1, fontSize: '0.75rem' }}>{assignment.project_name}:</span>
-                                      <input
-                                        type="number"
-                                        min="0"
-                                        max="1"
-                                        step="0.1"
-                                        value={assignment.fte_value}
-                                        onChange={(e) => {
-                                          const newFte = parseFloat(e.target.value) || 0;
-                                          handleCellEdit(user.email, dateStr, assignment.project_key, newFte);
-                                        }}
-                                        style={{ width: '50px', padding: '2px', fontSize: '0.75rem' }}
-                                        onClick={(e) => e.stopPropagation()}
-                                      />
-                                      <button
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          if (window.confirm(`Usunąć przypisanie dla ${assignment.project_name}?`)) {
-                                            handleCellEdit(user.email, dateStr, assignment.project_key, 0);
-                                          }
-                                        }}
-                                        style={{ fontSize: '0.7rem', padding: '2px 4px' }}
-                                      >
-                                        ×
-                                      </button>
-                                    </div>
-                                  ))}
-                                  <select
-                                    defaultValue=""
-                                    onChange={(e) => {
-                                      const projectKey = e.target.value;
-                                      if (projectKey) {
-                                        const project = projects.find(p => p.key === projectKey);
-                                        const existing = filteredAssignments.find(a => a.project_key === projectKey);
-                                        const fteValue = existing ? existing.fte_value : 0.5;
-                                        const input = prompt(`Podaj FTE dla projektu ${project.name}:`, fteValue);
-                                        if (input !== null) {
-                                          handleCellEdit(user.email, dateStr, projectKey, parseFloat(input) || 0);
-                                        }
-                                      }
-                                    }}
-                                    onClick={(e) => e.stopPropagation()}
-                                    style={{ width: '100%', marginTop: '4px', fontSize: '0.75rem' }}
-                                  >
-                                    <option value="">+ Dodaj projekt...</option>
-                                    {projects
-                                      .filter(p => !filteredAssignments.find(a => a.project_key === p.key))
-                                      .map(p => (
-                                        <option key={p.key} value={p.key}>{p.name}</option>
-                                      ))}
-                                  </select>
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      setEditingCell(null);
-                                    }}
-                                    style={{ marginTop: '4px', width: '100%', fontSize: '0.75rem', padding: '4px' }}
-                                  >
-                                    Zamknij
-                                  </button>
-                                </div>
-                              </td>
-                            );
-                          }
-
-                          const bgColor = getCellColor(totalFte, overloaded, underutilized);
 
                           return (
-                            <td
+                            <TableCell
                               key={dateIdx}
-                              className={`calendar-cell ${overloaded ? 'overloaded' : ''} ${underutilized ? 'underutilized' : ''}`}
-                              style={{ backgroundColor: bgColor }}
-                              onClick={() => setEditingCell(`${user.email}_${dateStr}`)}
-                              title={filteredAssignments.length > 0 
-                                ? filteredAssignments.map(a => `${a.project_name}: ${a.fte_value}`).join(', ') + ` (Total: ${totalFte.toFixed(2)})`
-                                : 'Brak przypisań - kliknij aby dodać'}
+                              onClick={() => setEditDialog({ userEmail: user.email, date: dateStr, assignments: filteredAssignments })}
+                              sx={{
+                                bgcolor: getCellColor(totalFte),
+                                cursor: 'pointer',
+                                border: overloaded ? '2px solid #c62828' : underutilized ? '2px dashed #e65100' : '1px solid transparent',
+                                '&:hover': {
+                                  bgcolor: 'action.hover',
+                                  transform: 'scale(1.05)',
+                                  zIndex: 5,
+                                  position: 'relative'
+                                },
+                                minHeight: 80,
+                                verticalAlign: 'top',
+                                p: 1
+                              }}
                             >
                               {filteredAssignments.length > 0 ? (
-                                <div className="cell-content">
-                                  <div className="projects-list">
-                                    {filteredAssignments.map((assignment, idx) => (
-                                      <div 
-                                        key={idx} 
-                                        className="project-item"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          setEditingCell(`${user.email}_${dateStr}`);
-                                        }}
-                                        style={{ cursor: 'pointer' }}
-                                        title={`Kliknij aby edytować ${assignment.project_name}`}
-                                      >
-                                        <span className="project-name">{assignment.project_name}</span>
-                                        <span className="project-fte">{assignment.fte_value}</span>
-                                      </div>
-                                    ))}
-                                  </div>
-                                  <div className="cell-total">Total: {totalFte.toFixed(2)}</div>
-                                  {overloaded && <span className="overload-indicator">⚠️</span>}
-                                  {underutilized && <span className="underutilized-indicator">ℹ️</span>}
-                                </div>
+                                <Box>
+                                  {filteredAssignments.map((assignment, idx) => (
+                                    <Chip
+                                      key={idx}
+                                      label={`${assignment.project_name}: ${assignment.fte_value}`}
+                                      size="small"
+                                      sx={{ mb: 0.5, display: 'block', fontSize: '0.7rem' }}
+                                    />
+                                  ))}
+                                  <Typography variant="caption" display="block" sx={{ mt: 0.5, fontWeight: 600 }}>
+                                    Total: {totalFte.toFixed(2)}
+                                  </Typography>
+                                  {overloaded && <Typography variant="caption" color="error">⚠️</Typography>}
+                                  {underutilized && <Typography variant="caption" color="warning.main">ℹ️</Typography>}
+                                </Box>
                               ) : (
-                                <div className="cell-content empty">-</div>
+                                <Typography variant="caption" color="text.secondary" align="center">
+                                  Kliknij aby dodać
+                                </Typography>
                               )}
-                            </td>
+                            </TableCell>
                           );
                         })}
-                      </tr>
+                      </TableRow>
                     );
                   })}
-              </tbody>
-            </table>
-          </div>
+                </TableBody>
+              </Table>
+            </TableContainer>
+          </Paper>
+        )}
 
-          <div className="calendar-legend">
-            <div className="legend-item">
-              <div className="legend-color" style={{ backgroundColor: '#e8f5e9' }}></div>
-              <span>Optymalne (0.8-1.0 FTE)</span>
-            </div>
-            <div className="legend-item">
-              <div className="legend-color" style={{ backgroundColor: '#fff3e0' }}></div>
-              <span>Niedobór (&lt;0.8 FTE)</span>
-            </div>
-            <div className="legend-item">
-              <div className="legend-color" style={{ backgroundColor: '#ffebee' }}></div>
-              <span>Przeciążenie (&gt;1.0 FTE)</span>
-            </div>
-            <div className="legend-item">
-              <div className="legend-color" style={{ backgroundColor: '#f5f5f5' }}></div>
-              <span>Brak przypisania</span>
-            </div>
-            <div className="legend-note">
-              💡 Kliknij na komórkę, aby edytować FTE
-            </div>
-          </div>
-        </div>
-      ) : (
-        <div className="no-data">Brak danych do wyświetlenia</div>
-      )}
-    </div>
+        {/* Dialog do edycji przypisań */}
+        <Dialog
+          open={editDialog !== null}
+          onClose={() => setEditDialog(null)}
+          maxWidth="sm"
+          fullWidth
+        >
+          {editDialog && (
+            <>
+              <DialogTitle>
+                Edycja przypisań - {new Date(editDialog.date).toLocaleDateString('pl-PL')}
+              </DialogTitle>
+              <DialogContent>
+                <Box sx={{ mt: 2 }}>
+                  {editDialog.assignments.map((assignment, idx) => (
+                    <Box key={idx} sx={{ mb: 2, p: 2, border: '1px solid', borderColor: 'divider', borderRadius: 1 }}>
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+                        <Typography variant="subtitle2">{assignment.project_name}</Typography>
+                        <IconButton
+                          size="small"
+                          color="error"
+                          onClick={() => handleCellEdit(editDialog.userEmail, assignment.project_key, editDialog.date, 0)}
+                        >
+                          <DeleteIcon fontSize="small" />
+                        </IconButton>
+                      </Box>
+                      <TextField
+                        fullWidth
+                        type="number"
+                        label="FTE"
+                        inputProps={{ min: 0, max: 1, step: 0.1 }}
+                        value={assignment.fte_value}
+                        onChange={(e) => {
+                          const newFte = parseFloat(e.target.value) || 0;
+                          handleCellEdit(editDialog.userEmail, assignment.project_key, editDialog.date, newFte);
+                        }}
+                        size="small"
+                      />
+                    </Box>
+                  ))}
+                  <FormControl fullWidth sx={{ mt: 2 }}>
+                    <InputLabel>Dodaj projekt</InputLabel>
+                    <Select
+                      value=""
+                      onChange={(e) => {
+                        const projectKey = e.target.value;
+                        if (projectKey) {
+                          const project = projects.find(p => p.key === projectKey);
+                          if (project) {
+                            handleCellEdit(editDialog.userEmail, projectKey, editDialog.date, 0.5);
+                          }
+                        }
+                      }}
+                      label="Dodaj projekt"
+                    >
+                      <MenuItem value="">Wybierz projekt...</MenuItem>
+                      {projects
+                        .filter(p => !editDialog.assignments.find(a => a.project_key === p.key))
+                        .map(p => (
+                          <MenuItem key={p.key} value={p.key}>
+                            {p.name} ({p.key})
+                          </MenuItem>
+                        ))}
+                    </Select>
+                  </FormControl>
+                </Box>
+              </DialogContent>
+              <DialogActions>
+                <Button onClick={() => setEditDialog(null)}>Zamknij</Button>
+              </DialogActions>
+            </>
+          )}
+        </Dialog>
+
+        <Box sx={{ mt: 3, p: 2, bgcolor: 'background.default', borderRadius: 1 }}>
+          <Typography variant="subtitle2" gutterBottom>
+            Legenda:
+          </Typography>
+          <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
+            <Chip label="Optymalne (0.8-1.0 FTE)" sx={{ bgcolor: '#e8f5e9' }} size="small" />
+            <Chip label="Niedobór (&lt;0.8 FTE)" sx={{ bgcolor: '#fff3e0' }} size="small" />
+            <Chip label="Przeciążenie (&gt;1.0 FTE)" sx={{ bgcolor: '#ffebee' }} size="small" />
+            <Chip label="Brak przypisania" sx={{ bgcolor: '#f5f5f5' }} size="small" />
+          </Box>
+          <Typography variant="caption" display="block" sx={{ mt: 1, fontStyle: 'italic' }}>
+            💡 Kliknij na komórkę, aby edytować przypisania FTE per projekt
+          </Typography>
+        </Box>
+      </Box>
+    </LocalizationProvider>
   );
 };
 
 export default TeamCalendar;
-
