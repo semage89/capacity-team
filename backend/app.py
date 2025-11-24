@@ -5,7 +5,7 @@ import os
 import requests
 from datetime import datetime, timedelta
 from typing import List, Dict, Optional
-from models import db, FTEAssignment
+from backend.models import db, FTEAssignment
 from sqlalchemy import func, and_
 
 # Załaduj .env z katalogu głównego projektu (dla Heroku) lub z backend (dla lokalnego)
