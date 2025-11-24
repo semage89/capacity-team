@@ -68,11 +68,15 @@ def init_clients():
 # Inicjalizuj klientów przy starcie
 with app.app_context():
     try:
+        # Sprawdź połączenie z bazą przed create_all
+        db.engine.connect()
         db.create_all()
         print("✓ Baza danych zainicjalizowana")
     except Exception as e:
         print(f"⚠ Błąd podczas inicjalizacji bazy danych: {e}")
         print("Aplikacja będzie działać, ale niektóre funkcje mogą być niedostępne")
+        import traceback
+        traceback.print_exc()
     
     init_clients()
 
@@ -107,8 +111,13 @@ def sync_users():
     if not sync_service:
         return jsonify({'error': 'Jira nie jest skonfigurowane'}), 500
     
-    result = sync_service.sync_users()
-    return jsonify(result), 200 if result.get('status') == 'success' else 500
+    try:
+        result = sync_service.sync_users()
+        return jsonify(result), 200 if result.get('status') == 'success' else 500
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e), 'type': type(e).__name__}), 500
 
 
 @app.route('/api/sync/all', methods=['POST'])
@@ -579,12 +588,12 @@ def serve_frontend(path):
     }), 200
 
 
-if __name__ == '__main__':
-    # Uruchom scheduler jeśli jest skonfigurowany
-    try:
-        from .scheduler import init_scheduler
-        scheduler = init_scheduler()
-    except Exception as e:
-        print(f"Nie udało się uruchomić schedulera: {e}")
-    
-    app.run(debug=True, port=5000)
+# Uruchom scheduler jeśli jest skonfigurowany (tylko w produkcji, nie przy starcie modułu)
+# Scheduler będzie uruchomiony przez gunicorn w produkcji
+# if __name__ == '__main__':
+#     try:
+#         from .scheduler import init_scheduler
+#         scheduler = init_scheduler()
+#     except Exception as e:
+#         print(f"Nie udało się uruchomić schedulera: {e}")
+#     app.run(debug=True, port=5000)
