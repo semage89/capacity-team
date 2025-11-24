@@ -1,32 +1,45 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import './CapacityDashboard.css';
 
 const API_BASE_URL = process.env.REACT_APP_API_URL || 
   (process.env.NODE_ENV === 'production' ? '/api' : 'http://localhost:5000/api');
 
-const COLORS = ['#0052cc', '#0065ff', '#2684ff', '#4c9aff', '#7ab8ff', '#a5d4ff'];
+const CapacityDashboard = () => {
+  const [capacityData, setCapacityData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [dateRange, setDateRange] = useState({
+    start: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+    end: new Date().toISOString().split('T')[0]
+  });
 
-const CapacityDashboard = ({ capacityData, dateRange, onDateRangeChange, loading }) => {
-  const handleDateChange = (field, value) => {
-    onDateRangeChange(
-      field === 'start' ? value : dateRange.start,
-      field === 'end' ? value : dateRange.end
-    );
+  useEffect(() => {
+    loadCapacity();
+  }, [dateRange]);
+
+  const loadCapacity = async () => {
+    try {
+      setLoading(true);
+      const response = await axios.get(`${API_BASE_URL}/capacity`, {
+        params: {
+          start_date: dateRange.start,
+          end_date: dateRange.end
+        }
+      });
+      setCapacityData(response.data);
+    } catch (err) {
+      console.error('Błąd podczas ładowania capacity:', err);
+    } finally {
+      setLoading(false);
+    }
   };
 
   if (loading || !capacityData) {
-    return (
-      <div className="dashboard">
-        <div className="loading">Ładowanie danych capacity...</div>
-      </div>
-    );
+    return <div className="loading">Ładowanie danych capacity...</div>;
   }
 
   const { projects } = capacityData;
-
-  // Przygotuj dane do wykresów
   const barChartData = projects
     .sort((a, b) => b.hours_spent - a.hours_spent)
     .slice(0, 10)
@@ -36,40 +49,29 @@ const CapacityDashboard = ({ capacityData, dateRange, onDateRangeChange, loading
       'Użytkownicy': project.user_count
     }));
 
-  const pieChartData = projects
-    .filter(p => p.hours_spent > 0)
-    .sort((a, b) => b.hours_spent - a.hours_spent)
-    .slice(0, 6)
-    .map(project => ({
-      name: project.name,
-      value: project.hours_spent
-    }));
-
   const totalHours = projects.reduce((sum, p) => sum + p.hours_spent, 0);
-  const totalUsers = new Set(projects.flatMap(p => p.users.map(u => u.displayName))).size;
 
   return (
-    <div className="dashboard">
-      <div className="dashboard-header">
-        <h2>Przegląd Capacity</h2>
-        <div className="date-range-selector">
-          <label>
-            Od:
-            <input
-              type="date"
-              value={dateRange.start}
-              onChange={(e) => handleDateChange('start', e.target.value)}
-            />
-          </label>
-          <label>
-            Do:
-            <input
-              type="date"
-              value={dateRange.end}
-              onChange={(e) => handleDateChange('end', e.target.value)}
-            />
-          </label>
-        </div>
+    <div className="capacity-dashboard">
+      <h2>Przegląd Capacity</h2>
+      
+      <div className="date-range-selector">
+        <label>
+          Od:
+          <input
+            type="date"
+            value={dateRange.start}
+            onChange={(e) => setDateRange({...dateRange, start: e.target.value})}
+          />
+        </label>
+        <label>
+          Do:
+          <input
+            type="date"
+            value={dateRange.end}
+            onChange={(e) => setDateRange({...dateRange, end: e.target.value})}
+          />
+        </label>
       </div>
 
       <div className="stats-grid">
@@ -81,53 +83,20 @@ const CapacityDashboard = ({ capacityData, dateRange, onDateRangeChange, loading
           <div className="stat-value">{totalHours.toFixed(1)}h</div>
           <div className="stat-label">Łączny czas</div>
         </div>
-        <div className="stat-card">
-          <div className="stat-value">{totalUsers}</div>
-          <div className="stat-label">Użytkowników</div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-value">{(totalHours / projects.length || 0).toFixed(1)}h</div>
-          <div className="stat-label">Średnio na projekt</div>
-        </div>
       </div>
 
-      <div className="charts-grid">
-        <div className="chart-container">
-          <h3>Top 10 projektów - wykorzystanie czasu</h3>
-          <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={barChartData}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="name" />
-              <YAxis />
-              <Tooltip />
-              <Legend />
-              <Bar dataKey="Godziny" fill="#0052cc" />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-
-        <div className="chart-container">
-          <h3>Rozkład czasu per projekt</h3>
-          <ResponsiveContainer width="100%" height={300}>
-            <PieChart>
-              <Pie
-                data={pieChartData}
-                cx="50%"
-                cy="50%"
-                labelLine={false}
-                label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
-                outerRadius={100}
-                fill="#8884d8"
-                dataKey="value"
-              >
-                {pieChartData.map((entry, index) => (
-                  <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                ))}
-              </Pie>
-              <Tooltip />
-            </PieChart>
-          </ResponsiveContainer>
-        </div>
+      <div className="chart-container">
+        <h3>Top 10 projektów - wykorzystanie czasu</h3>
+        <ResponsiveContainer width="100%" height={300}>
+          <BarChart data={barChartData}>
+            <CartesianGrid strokeDasharray="3 3" />
+            <XAxis dataKey="name" />
+            <YAxis />
+            <Tooltip />
+            <Legend />
+            <Bar dataKey="Godziny" fill="#0052cc" />
+          </BarChart>
+        </ResponsiveContainer>
       </div>
 
       <div className="projects-table">

@@ -5,6 +5,8 @@ import os
 import requests
 from datetime import datetime, timedelta
 from typing import List, Dict, Optional
+from models import db, FTEAssignment
+from sqlalchemy import func, and_
 
 # Załaduj .env z katalogu głównego projektu (dla Heroku) lub z backend (dla lokalnego)
 env_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), '.env')
@@ -13,16 +15,13 @@ if not os.path.exists(env_path):
 load_dotenv(env_path)
 
 # Konfiguracja ścieżki do frontendu
-# W Heroku: uruchamiamy z root (/app), więc frontend/build jest względem root
-# Lokalnie: backend/app.py, więc trzeba wyjść o poziom wyżej
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FRONTEND_BUILD_PATH = os.path.join(BASE_DIR, 'frontend', 'build')
 
-# Spróbuj różne ścieżki
 possible_paths = [
-    FRONTEND_BUILD_PATH,  # Względem backend/
-    os.path.join(os.getcwd(), 'frontend', 'build'),  # Względem current dir
-    '/app/frontend/build',  # Absolutna ścieżka na Heroku
+    FRONTEND_BUILD_PATH,
+    os.path.join(os.getcwd(), 'frontend', 'build'),
+    '/app/frontend/build',
 ]
 
 FRONTEND_BUILD_PATH = None
@@ -36,14 +35,19 @@ if not FRONTEND_BUILD_PATH:
     print(f"✗ Frontend build NIE znaleziony w żadnej z lokalizacji:")
     for path in possible_paths:
         print(f"  - {path} (istnieje: {os.path.exists(path)})")
-    print(f"  Aktualny katalog roboczy: {os.getcwd()}")
-    print(f"  BASE_DIR: {BASE_DIR}")
-    print(f"  __file__: {__file__}")
-    # Ustaw domyślną ścieżkę nawet jeśli nie istnieje - Flask to obsłuży
-    FRONTEND_BUILD_PATH = possible_paths[1]  # Użyj ścieżki względem current dir
+    FRONTEND_BUILD_PATH = possible_paths[1]
 
 app = Flask(__name__, static_folder=FRONTEND_BUILD_PATH, static_url_path='')
 CORS(app)
+
+# Konfiguracja bazy danych
+database_url = os.getenv('DATABASE_URL', 'sqlite:///capacity_planner.db')
+if database_url.startswith('postgres://'):
+    database_url = database_url.replace('postgres://', 'postgresql://', 1)
+app.config['SQLALCHEMY_DATABASE_URI'] = database_url
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
+db.init_app(app)
 
 # Konfiguracja Jira
 JIRA_URL = os.getenv('JIRA_URL')
@@ -51,12 +55,11 @@ JIRA_EMAIL = os.getenv('JIRA_EMAIL')
 JIRA_API_TOKEN = os.getenv('JIRA_API_TOKEN')
 TEMPO_API_TOKEN = os.getenv('TEMPO_API_TOKEN')
 
-# Headers dla autoryzacji
-JIRA_AUTH = (JIRA_EMAIL, JIRA_API_TOKEN)
+JIRA_AUTH = (JIRA_EMAIL, JIRA_API_TOKEN) if JIRA_EMAIL and JIRA_API_TOKEN else None
 TEMPO_HEADERS = {
     'Authorization': f'Bearer {TEMPO_API_TOKEN}',
     'Content-Type': 'application/json'
-}
+} if TEMPO_API_TOKEN else {}
 
 
 class JiraClient:
@@ -84,7 +87,6 @@ class JiraClient:
     def get_project_users(self, project_key: str) -> List[Dict]:
         """Pobiera użytkowników przypisanych do projektu"""
         try:
-            # Pobierz użytkowników z projektu
             response = requests.get(
                 f"{self.api_url}/project/{project_key}/role",
                 auth=self.auth
@@ -93,7 +95,6 @@ class JiraClient:
             roles = response.json()
             
             users = []
-            # Pobierz użytkowników z roli "Users"
             if 'Users' in roles:
                 users_url = roles['Users']
                 users_response = requests.get(users_url, auth=self.auth)
@@ -146,21 +147,18 @@ class TempoClient:
     def __init__(self, base_url: str, headers: Dict):
         self.base_url = base_url.rstrip('/')
         self.headers = headers
-        # Tempo API może używać różnych endpointów w zależności od wersji
-        # Spróbuj najpierw nowszej wersji, potem starszej
         self.api_urls = [
             f"{self.base_url}/rest/tempo-timesheets/4",
             f"{self.base_url}/rest/tempo-timesheets/3",
             f"{self.base_url}/rest/tempo-core/1"
         ]
-        self.api_url = self.api_urls[0]  # Domyślnie najnowsza
+        self.api_url = self.api_urls[0]
     
     def get_worklogs(self, project_key: Optional[str] = None, 
                      start_date: Optional[str] = None,
                      end_date: Optional[str] = None,
                      user: Optional[str] = None) -> List[Dict]:
         """Pobiera worklogi z Tempo"""
-        # Spróbuj różnych endpointów API
         for api_url in self.api_urls:
             try:
                 params = {}
@@ -173,7 +171,6 @@ class TempoClient:
                 if user:
                     params['username'] = user
                 
-                # Różne wersje API mogą używać różnych endpointów
                 endpoints = [
                     f"{api_url}/worklogs",
                     f"{api_url}/worklogs/search",
@@ -190,7 +187,6 @@ class TempoClient:
                         )
                         if response.status_code == 200:
                             data = response.json()
-                            # Sprawdź format odpowiedzi
                             if isinstance(data, list):
                                 return data
                             elif isinstance(data, dict) and 'results' in data:
@@ -214,7 +210,7 @@ class TempoClient:
         project_time = {}
         for worklog in worklogs:
             project_key = worklog.get('issue', {}).get('projectKey', 'Unknown')
-            time_spent = worklog.get('timeSpentSeconds', 0) / 3600  # konwersja na godziny
+            time_spent = worklog.get('timeSpentSeconds', 0) / 3600
             
             if project_key not in project_time:
                 project_time[project_key] = 0
@@ -223,7 +219,7 @@ class TempoClient:
         return project_time
 
 
-# Inicjalizacja klientów (z obsługą błędów)
+# Inicjalizacja klientów
 try:
     jira_client = JiraClient(JIRA_URL, JIRA_AUTH) if JIRA_URL and JIRA_EMAIL and JIRA_API_TOKEN else None
     tempo_client = TempoClient(JIRA_URL, TEMPO_HEADERS) if JIRA_URL and TEMPO_API_TOKEN else None
@@ -232,6 +228,11 @@ except Exception as e:
     print(f"✗ Błąd podczas inicjalizacji klientów: {e}")
     jira_client = None
     tempo_client = None
+
+
+# Inicjalizacja bazy danych
+with app.app_context():
+    db.create_all()
 
 
 @app.route('/api/health', methods=['GET'])
@@ -243,6 +244,325 @@ def health():
         'tempo_configured': tempo_client is not None
     })
 
+
+# ========== FTE Management Endpoints ==========
+
+@app.route('/api/fte', methods=['GET'])
+def get_fte_assignments():
+    """Pobiera przypisania FTE z opcjonalnymi filtrami"""
+    project_key = request.args.get('project_key')
+    user_email = request.args.get('user_email')
+    start_date = request.args.get('start_date')
+    end_date = request.args.get('end_date')
+    
+    query = FTEAssignment.query
+    
+    if project_key:
+        query = query.filter(FTEAssignment.project_key == project_key)
+    if user_email:
+        query = query.filter(FTEAssignment.user_email == user_email)
+    if start_date:
+        query = query.filter(FTEAssignment.assignment_date >= datetime.fromisoformat(start_date).date())
+    if end_date:
+        query = query.filter(FTEAssignment.assignment_date <= datetime.fromisoformat(end_date).date())
+    
+    assignments = query.order_by(FTEAssignment.assignment_date.desc()).all()
+    return jsonify([a.to_dict() for a in assignments])
+
+
+@app.route('/api/fte', methods=['POST'])
+def create_fte_assignment():
+    """Tworzy nowe przypisanie FTE"""
+    data = request.json
+    
+    required_fields = ['user_email', 'user_display_name', 'project_key', 'project_name', 'assignment_date', 'fte_value']
+    for field in required_fields:
+        if field not in data:
+            return jsonify({'error': f'Brakuje pola: {field}'}), 400
+    
+    # Walidacja FTE (0.0 - 1.0)
+    fte_value = float(data['fte_value'])
+    if fte_value < 0 or fte_value > 1:
+        return jsonify({'error': 'FTE musi być między 0.0 a 1.0'}), 400
+    
+    # Sprawdź czy już istnieje
+    assignment_date = datetime.fromisoformat(data['assignment_date']).date()
+    existing = FTEAssignment.query.filter_by(
+        user_email=data['user_email'],
+        project_key=data['project_key'],
+        assignment_date=assignment_date
+    ).first()
+    
+    if existing:
+        # Aktualizuj istniejące
+        existing.fte_value = fte_value
+        existing.user_display_name = data['user_display_name']
+        existing.project_name = data['project_name']
+        existing.updated_at = datetime.now()
+        db.session.commit()
+        return jsonify(existing.to_dict()), 200
+    
+    # Utwórz nowe
+    assignment = FTEAssignment(
+        user_email=data['user_email'],
+        user_display_name=data['user_display_name'],
+        project_key=data['project_key'],
+        project_name=data['project_name'],
+        assignment_date=assignment_date,
+        fte_value=fte_value
+    )
+    
+    db.session.add(assignment)
+    db.session.commit()
+    
+    return jsonify(assignment.to_dict()), 201
+
+
+@app.route('/api/fte/<int:assignment_id>', methods=['PUT'])
+def update_fte_assignment(assignment_id):
+    """Aktualizuje przypisanie FTE"""
+    assignment = FTEAssignment.query.get_or_404(assignment_id)
+    data = request.json
+    
+    if 'fte_value' in data:
+        fte_value = float(data['fte_value'])
+        if fte_value < 0 or fte_value > 1:
+            return jsonify({'error': 'FTE musi być między 0.0 a 1.0'}), 400
+        assignment.fte_value = fte_value
+    
+    if 'user_display_name' in data:
+        assignment.user_display_name = data['user_display_name']
+    if 'project_name' in data:
+        assignment.project_name = data['project_name']
+    
+    assignment.updated_at = datetime.now()
+    db.session.commit()
+    
+    return jsonify(assignment.to_dict())
+
+
+@app.route('/api/fte/<int:assignment_id>', methods=['DELETE'])
+def delete_fte_assignment(assignment_id):
+    """Usuwa przypisanie FTE"""
+    assignment = FTEAssignment.query.get_or_404(assignment_id)
+    db.session.delete(assignment)
+    db.session.commit()
+    
+    return jsonify({'message': 'Przypisanie FTE zostało usunięte'}), 200
+
+
+@app.route('/api/fte/bulk', methods=['POST'])
+def bulk_create_fte():
+    """Tworzy wiele przypisań FTE naraz"""
+    data = request.json
+    assignments_data = data.get('assignments', [])
+    
+    created = []
+    updated = []
+    errors = []
+    
+    for item in assignments_data:
+        try:
+            required_fields = ['user_email', 'user_display_name', 'project_key', 'project_name', 'assignment_date', 'fte_value']
+            for field in required_fields:
+                if field not in item:
+                    errors.append({'item': item, 'error': f'Brakuje pola: {field}'})
+                    break
+            else:
+                fte_value = float(item['fte_value'])
+                if fte_value < 0 or fte_value > 1:
+                    errors.append({'item': item, 'error': 'FTE musi być między 0.0 a 1.0'})
+                    continue
+                
+                assignment_date = datetime.fromisoformat(item['assignment_date']).date()
+                existing = FTEAssignment.query.filter_by(
+                    user_email=item['user_email'],
+                    project_key=item['project_key'],
+                    assignment_date=assignment_date
+                ).first()
+                
+                if existing:
+                    existing.fte_value = fte_value
+                    existing.user_display_name = item['user_display_name']
+                    existing.project_name = item['project_name']
+                    existing.updated_at = datetime.now()
+                    updated.append(existing.to_dict())
+                else:
+                    assignment = FTEAssignment(
+                        user_email=item['user_email'],
+                        user_display_name=item['user_display_name'],
+                        project_key=item['project_key'],
+                        project_name=item['project_name'],
+                        assignment_date=assignment_date,
+                        fte_value=fte_value
+                    )
+                    db.session.add(assignment)
+                    created.append(assignment.to_dict())
+        except Exception as e:
+            errors.append({'item': item, 'error': str(e)})
+    
+    db.session.commit()
+    
+    return jsonify({
+        'created': len(created),
+        'updated': len(updated),
+        'errors': len(errors),
+        'assignments': created + updated,
+        'error_details': errors
+    }), 200
+
+
+# ========== Time Verification Endpoints ==========
+
+@app.route('/api/verification/time', methods=['GET'])
+def verify_time():
+    """Weryfikuje czas spędzony vs FTE capacity"""
+    project_key = request.args.get('project_key')
+    user_email = request.args.get('user_email')
+    start_date = request.args.get('start_date', (datetime.now() - timedelta(days=30)).strftime('%Y-%m-%d'))
+    end_date = request.args.get('end_date', datetime.now().strftime('%Y-%m-%d'))
+    
+    if not tempo_client:
+        return jsonify({'error': 'Tempo nie jest skonfigurowane'}), 500
+    
+    # Pobierz worklogi z Tempo
+    worklogs = tempo_client.get_worklogs(
+        project_key=project_key,
+        start_date=start_date,
+        end_date=end_date,
+        user=user_email
+    )
+    
+    # Pobierz przypisania FTE
+    fte_query = FTEAssignment.query.filter(
+        FTEAssignment.assignment_date >= datetime.fromisoformat(start_date).date(),
+        FTEAssignment.assignment_date <= datetime.fromisoformat(end_date).date()
+    )
+    
+    if project_key:
+        fte_query = fte_query.filter(FTEAssignment.project_key == project_key)
+    if user_email:
+        fte_query = fte_query.filter(FTEAssignment.user_email == user_email)
+    
+    fte_assignments = fte_query.all()
+    
+    # Grupuj worklogi po użytkownikach i datach
+    user_time = {}  # {user_email: {date: hours}}
+    for worklog in worklogs:
+        user = worklog.get('author', {}).get('emailAddress', worklog.get('author', {}).get('displayName', 'Unknown'))
+        work_date = worklog.get('startDate', worklog.get('dateStarted', ''))
+        time_spent = worklog.get('timeSpentSeconds', 0) / 3600  # godziny
+        
+        if user not in user_time:
+            user_time[user] = {}
+        if work_date not in user_time[user]:
+            user_time[user][work_date] = 0
+        user_time[user][work_date] += time_spent
+    
+    # Grupuj FTE po użytkownikach i datach
+    user_fte = {}  # {user_email: {date: fte_value}}
+    for assignment in fte_assignments:
+        if assignment.user_email not in user_fte:
+            user_fte[assignment.user_email] = {}
+        user_fte[assignment.user_email][assignment.assignment_date.isoformat()] = assignment.fte_value
+    
+    # Oblicz capacity i wykorzystanie
+    verification_results = []
+    
+    # Dla każdego użytkownika
+    for user_email, time_by_date in user_time.items():
+        user_fte_data = user_fte.get(user_email, {})
+        
+        total_time_spent = sum(time_by_date.values())
+        total_capacity_hours = 0
+        
+        # Dla każdego dnia w okresie
+        start = datetime.fromisoformat(start_date).date()
+        end = datetime.fromisoformat(end_date).date()
+        current = start
+        
+        daily_details = []
+        while current <= end:
+            date_str = current.isoformat()
+            hours_spent = time_by_date.get(date_str, 0)
+            fte = user_fte_data.get(date_str, 0)
+            
+            # Zakładamy 8 godzin dziennie jako pełny dzień pracy
+            capacity_hours = fte * 8
+            total_capacity_hours += capacity_hours
+            
+            utilization = (hours_spent / capacity_hours * 100) if capacity_hours > 0 else 0
+            
+            daily_details.append({
+                'date': date_str,
+                'hours_spent': round(hours_spent, 2),
+                'fte': fte,
+                'capacity_hours': round(capacity_hours, 2),
+                'utilization_percent': round(utilization, 2)
+            })
+            
+            current += timedelta(days=1)
+        
+        utilization_percent = (total_time_spent / total_capacity_hours * 100) if total_capacity_hours > 0 else 0
+        
+        verification_results.append({
+            'user_email': user_email,
+            'user_display_name': fte_assignments[0].user_display_name if fte_assignments and fte_assignments[0].user_email == user_email else user_email,
+            'start_date': start_date,
+            'end_date': end_date,
+            'total_time_spent_hours': round(total_time_spent, 2),
+            'total_capacity_hours': round(total_capacity_hours, 2),
+            'utilization_percent': round(utilization_percent, 2),
+            'daily_details': daily_details
+        })
+    
+    # Dodaj użytkowników z FTE ale bez czasu
+    for user_email, fte_by_date in user_fte.items():
+        if user_email not in user_time:
+            assignment = next((a for a in fte_assignments if a.user_email == user_email), None)
+            if assignment:
+                start = datetime.fromisoformat(start_date).date()
+                end = datetime.fromisoformat(end_date).date()
+                current = start
+                total_capacity_hours = 0
+                
+                daily_details = []
+                while current <= end:
+                    date_str = current.isoformat()
+                    fte = fte_by_date.get(date_str, 0)
+                    capacity_hours = fte * 8
+                    total_capacity_hours += capacity_hours
+                    
+                    daily_details.append({
+                        'date': date_str,
+                        'hours_spent': 0,
+                        'fte': fte,
+                        'capacity_hours': round(capacity_hours, 2),
+                        'utilization_percent': 0
+                    })
+                    
+                    current += timedelta(days=1)
+                
+                verification_results.append({
+                    'user_email': user_email,
+                    'user_display_name': assignment.user_display_name,
+                    'start_date': start_date,
+                    'end_date': end_date,
+                    'total_time_spent_hours': 0,
+                    'total_capacity_hours': round(total_capacity_hours, 2),
+                    'utilization_percent': 0,
+                    'daily_details': daily_details
+                })
+    
+    return jsonify({
+        'start_date': start_date,
+        'end_date': end_date,
+        'project_key': project_key,
+        'results': verification_results
+    })
+
+
+# ========== Existing Endpoints ==========
 
 @app.route('/api/projects', methods=['GET'])
 def get_projects():
@@ -280,7 +600,6 @@ def get_project_time(project_key: str):
     if not tempo_client:
         return jsonify({'error': 'Tempo nie jest skonfigurowane'}), 500
     
-    # Pobierz parametry dat z query string
     start_date = request.args.get('start_date', 
                                   (datetime.now() - timedelta(days=30)).strftime('%Y-%m-%d'))
     end_date = request.args.get('end_date', datetime.now().strftime('%Y-%m-%d'))
@@ -291,13 +610,12 @@ def get_project_time(project_key: str):
         end_date=end_date
     )
     
-    # Grupuj po użytkownikach
     user_time = {}
     total_time = 0
     
     for worklog in worklogs:
         user = worklog.get('author', {}).get('displayName', 'Unknown')
-        time_spent = worklog.get('timeSpentSeconds', 0) / 3600  # godziny
+        time_spent = worklog.get('timeSpentSeconds', 0) / 3600
         
         if user not in user_time:
             user_time[user] = 0
@@ -313,75 +631,25 @@ def get_project_time(project_key: str):
     })
 
 
-@app.route('/', defaults={'path': ''})
-@app.route('/<path:path>')
-def serve_frontend(path):
-    """Serwuje frontend React"""
-    # Nie serwuj plików API przez ten endpoint
-    if path.startswith('api/'):
-        return jsonify({'error': 'Not found'}), 404
-    
-    static_folder = app.static_folder
-    
-    # Jeśli nie ma static_folder, spróbuj znaleźć build
-    if not static_folder or not os.path.exists(static_folder):
-        static_folder = FRONTEND_BUILD_PATH
-    
-    if static_folder and os.path.exists(static_folder):
-        # Jeśli ścieżka jest pusta lub to katalog, zwróć index.html
-        if path == '' or path.endswith('/'):
-            index_path = os.path.join(static_folder, 'index.html')
-            if os.path.exists(index_path):
-                return send_from_directory(static_folder, 'index.html')
-        
-        # Spróbuj znaleźć plik
-        file_path = os.path.join(static_folder, path)
-        if os.path.exists(file_path) and os.path.isfile(file_path):
-            return send_from_directory(static_folder, path)
-        
-        # Jeśli plik nie istnieje, ale to nie jest API, zwróć index.html (SPA routing)
-        index_path = os.path.join(static_folder, 'index.html')
-        if os.path.exists(index_path):
-            return send_from_directory(static_folder, 'index.html')
-    
-    # Jeśli frontend nie jest zbudowany, zwróć informację
-    return jsonify({
-        'message': 'Frontend nie jest dostępny. Upewnij się, że został zbudowany.',
-        'api_status': 'ok',
-        'static_folder': static_folder,
-        'exists': os.path.exists(static_folder) if static_folder else False,
-        'current_dir': os.getcwd(),
-        'base_dir': BASE_DIR
-    }), 200
-
-
 @app.route('/api/capacity', methods=['GET'])
 def get_capacity():
     """Pobiera capacity dla wszystkich projektów"""
     if not jira_client or not tempo_client:
         return jsonify({'error': 'Jira lub Tempo nie jest skonfigurowane'}), 500
     
-    # Pobierz parametry dat
     start_date = request.args.get('start_date', 
                                   (datetime.now() - timedelta(days=30)).strftime('%Y-%m-%d'))
     end_date = request.args.get('end_date', datetime.now().strftime('%Y-%m-%d'))
     
-    # Pobierz projekty
     projects = jira_client.get_projects()
-    
-    # Pobierz czas per projekt
     project_time = tempo_client.get_time_per_project(start_date, end_date)
     
-    # Połącz dane
     capacity_data = []
     for project in projects:
         project_key = project.get('key')
         project_name = project.get('name', project_key)
         
-        # Pobierz użytkowników projektu
         users = jira_client.get_project_users(project_key)
-        
-        # Pobierz czas dla projektu
         hours_spent = project_time.get(project_key, 0)
         
         capacity_data.append({
@@ -390,7 +658,7 @@ def get_capacity():
             'user_count': len(users),
             'hours_spent': round(hours_spent, 2),
             'users': [{'displayName': u.get('displayName', u.get('name', 'Unknown'))} 
-                     for u in users[:10]]  # Limit do 10 użytkowników
+                     for u in users[:10]]
         })
     
     return jsonify({
@@ -398,6 +666,42 @@ def get_capacity():
         'end_date': end_date,
         'projects': capacity_data
     })
+
+
+@app.route('/', defaults={'path': ''})
+@app.route('/<path:path>')
+def serve_frontend(path):
+    """Serwuje frontend React"""
+    if path.startswith('api/'):
+        return jsonify({'error': 'Not found'}), 404
+    
+    static_folder = app.static_folder
+    
+    if not static_folder or not os.path.exists(static_folder):
+        static_folder = FRONTEND_BUILD_PATH
+    
+    if static_folder and os.path.exists(static_folder):
+        if path == '' or path.endswith('/'):
+            index_path = os.path.join(static_folder, 'index.html')
+            if os.path.exists(index_path):
+                return send_from_directory(static_folder, 'index.html')
+        
+        file_path = os.path.join(static_folder, path)
+        if os.path.exists(file_path) and os.path.isfile(file_path):
+            return send_from_directory(static_folder, path)
+        
+        index_path = os.path.join(static_folder, 'index.html')
+        if os.path.exists(index_path):
+            return send_from_directory(static_folder, 'index.html')
+    
+    return jsonify({
+        'message': 'Frontend nie jest dostępny. Upewnij się, że został zbudowany.',
+        'api_status': 'ok',
+        'static_folder': static_folder,
+        'exists': os.path.exists(static_folder) if static_folder else False,
+        'current_dir': os.getcwd(),
+        'base_dir': BASE_DIR
+    }), 200
 
 
 if __name__ == '__main__':

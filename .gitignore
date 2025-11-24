@@ -42,3 +42,8 @@ Thumbs.db
 frontend/build/
 backend/__pycache__/
 
+# Database
+*.db
+*.sqlite
+*.sqlite3
+

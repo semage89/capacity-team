@@ -1,25 +1,16 @@
-.dashboard {
+.capacity-dashboard {
   width: 100%;
 }
 
-.dashboard-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 30px;
-  flex-wrap: wrap;
-  gap: 20px;
-}
-
-.dashboard-header h2 {
+.capacity-dashboard h2 {
+  margin-bottom: 20px;
   color: #333;
-  margin: 0;
 }
 
 .date-range-selector {
   display: flex;
   gap: 15px;
-  align-items: center;
+  margin-bottom: 20px;
 }
 
 .date-range-selector label {
@@ -64,18 +55,12 @@
   font-size: 0.9rem;
 }
 
-.charts-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
-  gap: 30px;
-  margin-bottom: 30px;
-}
-
 .chart-container {
   background: #fafafa;
   padding: 20px;
   border-radius: 8px;
   border: 1px solid #e0e0e0;
+  margin-bottom: 30px;
 }
 
 .chart-container h3 {
@@ -120,13 +105,9 @@
   background: #f9f9f9;
 }
 
-@media (max-width: 768px) {
-  .charts-grid {
-    grid-template-columns: 1fr;
-  }
-  
-  .stats-grid {
-    grid-template-columns: repeat(2, 1fr);
-  }
+.loading {
+  text-align: center;
+  padding: 40px;
+  color: #666;
 }
 

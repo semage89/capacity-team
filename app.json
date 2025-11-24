@@ -40,6 +40,9 @@
     "INLINE_RUNTIME_CHUNK": {
       "value": "false"
     }
-  }
+  },
+  "addons": [
+    "heroku-postgresql:mini"
+  ]
 }
 
