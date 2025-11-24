@@ -1,15 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, momentLocalizer } from 'react-big-calendar';
 import moment from 'moment';
 import 'moment/locale/pl';
+import { Calendar, momentLocalizer } from 'react-big-calendar';
 import 'react-big-calendar/lib/css/react-big-calendar.css';
-
-moment.locale('pl');
 import { Box, Paper, Typography, Button, Select, MenuItem, FormControl, InputLabel, Chip } from '@mui/material';
 import { DndProvider } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
 import axios from 'axios';
 
+moment.locale('pl');
 const localizer = momentLocalizer(moment);
 const API_BASE_URL = process.env.REACT_APP_API_URL || '/api';
 
