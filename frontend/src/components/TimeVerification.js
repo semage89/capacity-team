@@ -1,7 +1,33 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LineChart, Line } from 'recharts';
-import './TimeVerification.css';
+import {
+  Box,
+  Typography,
+  Paper,
+  Grid,
+  Select,
+  MenuItem,
+  FormControl,
+  InputLabel,
+  Button,
+  Card,
+  CardContent,
+  Alert,
+  CircularProgress,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  Chip,
+} from '@mui/material';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { DatePicker } from '@mui/x-date-pickers/DatePicker';
+import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
+import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
+import { pl } from 'date-fns/locale';
+import { Search as SearchIcon } from '@mui/icons-material';
 
 const API_BASE_URL = process.env.REACT_APP_API_URL || 
   (process.env.NODE_ENV === 'production' ? '/api' : 'http://localhost:5000/api');
@@ -14,9 +40,9 @@ const TimeVerification = () => {
   const [filters, setFilters] = useState({
     project_key: '',
     user_email: '',
-    capacity_status: '', // 'all', 'overloaded', 'underutilized', 'optimal'
-    start_date: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-    end_date: new Date().toISOString().split('T')[0]
+    capacity_status: '',
+    start_date: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
+    end_date: new Date()
   });
 
   useEffect(() => {
@@ -27,7 +53,8 @@ const TimeVerification = () => {
   const loadProjects = async () => {
     try {
       const response = await axios.get(`${API_BASE_URL}/projects`);
-      setProjects(response.data);
+      const sorted = response.data.sort((a, b) => (a.name || a.key).localeCompare(b.name || b.key, 'pl'));
+      setProjects(sorted);
     } catch (err) {
       console.error('Błąd podczas ładowania projektów:', err);
     }
@@ -48,8 +75,8 @@ const TimeVerification = () => {
     try {
       setLoading(true);
       const params = {
-        start_date: filters.start_date,
-        end_date: filters.end_date
+        start_date: filters.start_date.toISOString().split('T')[0],
+        end_date: filters.end_date.toISOString().split('T')[0]
       };
       if (filters.project_key) params.project_key = filters.project_key;
       if (filters.user_email) params.user_email = filters.user_email;
@@ -58,7 +85,6 @@ const TimeVerification = () => {
       setVerificationData(response.data);
     } catch (err) {
       console.error('Błąd podczas ładowania weryfikacji:', err);
-      alert('Błąd podczas ładowania danych weryfikacji');
     } finally {
       setLoading(false);
     }
@@ -75,193 +101,224 @@ const TimeVerification = () => {
     }));
   };
 
+  let filteredResults = verificationData?.results || [];
+  
+  if (filters.capacity_status) {
+    filteredResults = filteredResults.filter(userData => {
+      if (filters.capacity_status === 'overloaded') {
+        return userData.utilization_percent > 100;
+      } else if (filters.capacity_status === 'optimal') {
+        return userData.utilization_percent >= 80 && userData.utilization_percent <= 100;
+      } else if (filters.capacity_status === 'underutilized') {
+        return userData.utilization_percent < 80 && userData.utilization_percent > 0;
+      }
+      return true;
+    });
+  }
+
   return (
-    <div className="time-verification">
-      <h2>Weryfikacja Czasu vs Capacity</h2>
+    <LocalizationProvider dateAdapter={AdapterDateFns} adapterLocale={pl}>
+      <Box>
+        <Typography variant="h4" gutterBottom sx={{ mb: 3, fontWeight: 600 }}>
+          Weryfikacja Czasu vs Capacity
+        </Typography>
 
-      <div className="verification-filters">
-        <div className="form-row">
-          <div className="form-group">
-            <label>Projekt:</label>
-            <select 
-              value={filters.project_key} 
-              onChange={(e) => setFilters({...filters, project_key: e.target.value})}
-            >
-              <option value="">Wszystkie projekty</option>
-              {projects.sort((a, b) => (a.name || a.key).localeCompare(b.name || b.key, 'pl')).map(p => (
-                <option key={p.key} value={p.key}>{p.name} ({p.key})</option>
-              ))}
-            </select>
-          </div>
+        <Card sx={{ mb: 3 }}>
+          <CardContent>
+            <Grid container spacing={3} alignItems="flex-end">
+              <Grid item xs={12} sm={6} md={3}>
+                <FormControl fullWidth>
+                  <InputLabel>Projekt</InputLabel>
+                  <Select
+                    value={filters.project_key}
+                    onChange={(e) => setFilters({...filters, project_key: e.target.value})}
+                    label="Projekt"
+                  >
+                    <MenuItem value="">Wszystkie projekty</MenuItem>
+                    {projects.map(p => (
+                      <MenuItem key={p.key} value={p.key}>
+                        {p.name} ({p.key})
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              </Grid>
 
-          <div className="form-group">
-            <label>Użytkownik:</label>
-            <select 
-              value={filters.user_email} 
-              onChange={(e) => setFilters({...filters, user_email: e.target.value})}
-            >
-              <option value="">Wszyscy użytkownicy</option>
-              {users.sort((a, b) => (a.displayName || a.emailAddress || '').localeCompare(b.displayName || b.emailAddress || '', 'pl')).map(u => (
-                <option key={u.accountId || u.emailAddress} value={u.emailAddress || u.displayName}>
-                  {u.displayName} {u.emailAddress ? `(${u.emailAddress})` : ''}
-                </option>
-              ))}
-            </select>
-          </div>
+              <Grid item xs={12} sm={6} md={3}>
+                <FormControl fullWidth>
+                  <InputLabel>Użytkownik</InputLabel>
+                  <Select
+                    value={filters.user_email}
+                    onChange={(e) => setFilters({...filters, user_email: e.target.value})}
+                    label="Użytkownik"
+                  >
+                    <MenuItem value="">Wszyscy użytkownicy</MenuItem>
+                    {users.map(u => (
+                      <MenuItem key={u.accountId || u.emailAddress} value={u.emailAddress || u.displayName}>
+                        {u.displayName} {u.emailAddress ? `(${u.emailAddress})` : ''}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              </Grid>
 
-          <div className="form-group">
-            <label>Status Capacity:</label>
-            <select 
-              value={filters.capacity_status} 
-              onChange={(e) => setFilters({...filters, capacity_status: e.target.value})}
-            >
-              <option value="">Wszystkie</option>
-              <option value="overloaded">Przeciążenie (&gt;100%)</option>
-              <option value="optimal">Optymalne (80-100%)</option>
-              <option value="underutilized">Niedobór (&lt;80%)</option>
-            </select>
-          </div>
+              <Grid item xs={12} sm={6} md={2}>
+                <FormControl fullWidth>
+                  <InputLabel>Status Capacity</InputLabel>
+                  <Select
+                    value={filters.capacity_status}
+                    onChange={(e) => setFilters({...filters, capacity_status: e.target.value})}
+                    label="Status Capacity"
+                  >
+                    <MenuItem value="">Wszystkie</MenuItem>
+                    <MenuItem value="overloaded">Przeciążenie (&gt;100%)</MenuItem>
+                    <MenuItem value="optimal">Optymalne (80-100%)</MenuItem>
+                    <MenuItem value="underutilized">Niedobór (&lt;80%)</MenuItem>
+                  </Select>
+                </FormControl>
+              </Grid>
 
-          <div className="form-group">
-            <label>Od:</label>
-            <input
-              type="date"
-              value={filters.start_date}
-              onChange={(e) => setFilters({...filters, start_date: e.target.value})}
-            />
-          </div>
+              <Grid item xs={12} sm={6} md={2}>
+                <DatePicker
+                  label="Od"
+                  value={filters.start_date}
+                  onChange={(newValue) => setFilters({...filters, start_date: newValue})}
+                  slotProps={{ textField: { fullWidth: true } }}
+                />
+              </Grid>
 
-          <div className="form-group">
-            <label>Do:</label>
-            <input
-              type="date"
-              value={filters.end_date}
-              onChange={(e) => setFilters({...filters, end_date: e.target.value})}
-            />
-          </div>
+              <Grid item xs={12} sm={6} md={2}>
+                <DatePicker
+                  label="Do"
+                  value={filters.end_date}
+                  onChange={(newValue) => setFilters({...filters, end_date: newValue})}
+                  slotProps={{ textField: { fullWidth: true } }}
+                />
+              </Grid>
 
-          <button className="btn-primary" onClick={loadVerification}>
-            Sprawdź
-          </button>
-        </div>
-      </div>
+              <Grid item xs={12} sm={6} md={12}>
+                <Button
+                  variant="contained"
+                  startIcon={<SearchIcon />}
+                  onClick={loadVerification}
+                  size="large"
+                  fullWidth
+                >
+                  Sprawdź
+                </Button>
+              </Grid>
+            </Grid>
+          </CardContent>
+        </Card>
 
-      {loading && (
-        <div className="loading">Ładowanie danych weryfikacji...</div>
-      )}
+        {loading && (
+          <Box sx={{ display: 'flex', justifyContent: 'center', p: 3 }}>
+            <CircularProgress />
+          </Box>
+        )}
 
-      {verificationData && verificationData.results && (
-        <div className="verification-results">
-          {(() => {
-            let filteredResults = verificationData.results;
-            
-            // Filtruj po statusie capacity
-            if (filters.capacity_status) {
-              filteredResults = filteredResults.filter(userData => {
-                if (filters.capacity_status === 'overloaded') {
-                  return userData.utilization_percent > 100;
-                } else if (filters.capacity_status === 'optimal') {
-                  return userData.utilization_percent >= 80 && userData.utilization_percent <= 100;
-                } else if (filters.capacity_status === 'underutilized') {
-                  return userData.utilization_percent < 80 && userData.utilization_percent > 0;
-                }
-                return true;
-              });
-            }
-            
-            return filteredResults.length === 0 ? (
-              <div className="no-data">
-                Brak danych do wyświetlenia dla wybranych filtrów
-              </div>
-            ) : (
-              filteredResults.map((userData, index) => {
+        {verificationData && filteredResults.length === 0 && !loading && (
+          <Alert severity="info">Brak danych do wyświetlenia dla wybranych filtrów</Alert>
+        )}
+
+        {verificationData && filteredResults.length > 0 && (
+          <Box>
+            {filteredResults.map((userData, index) => {
               const chartData = prepareChartData(userData);
-              const utilizationColor = userData.utilization_percent > 100 ? '#dc3545' : 
-                                     userData.utilization_percent > 80 ? '#ffc107' : '#28a745';
+              const utilizationColor = userData.utilization_percent > 100 ? 'error' : 
+                                     userData.utilization_percent > 80 ? 'warning' : 'success';
 
               return (
-                <div key={index} className="user-verification-card">
-                  <div className="user-header">
-                    <h3>{userData.user_display_name}</h3>
-                    <div className="user-stats">
-                      <div className="stat-item">
-                        <span className="stat-label">Czas spędzony:</span>
-                        <span className="stat-value">{userData.total_time_spent_hours}h</span>
-                      </div>
-                      <div className="stat-item">
-                        <span className="stat-label">Capacity:</span>
-                        <span className="stat-value">{userData.total_capacity_hours}h</span>
-                      </div>
-                      <div className="stat-item">
-                        <span className="stat-label">Wykorzystanie:</span>
-                        <span 
-                          className="stat-value" 
-                          style={{ color: utilizationColor, fontWeight: 'bold' }}
-                        >
-                          {userData.utilization_percent.toFixed(1)}%
-                        </span>
-                      </div>
-                    </div>
-                  </div>
+                <Card key={index} sx={{ mb: 3 }}>
+                  <CardContent>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                      <Typography variant="h5" component="h3">
+                        {userData.user_display_name}
+                      </Typography>
+                      <Box sx={{ display: 'flex', gap: 2 }}>
+                        <Chip 
+                          label={`Czas: ${userData.total_time_spent_hours}h`} 
+                          color="primary" 
+                          variant="outlined"
+                        />
+                        <Chip 
+                          label={`Capacity: ${userData.total_capacity_hours}h`} 
+                          color="info" 
+                          variant="outlined"
+                        />
+                        <Chip 
+                          label={`${userData.utilization_percent.toFixed(1)}%`}
+                          color={utilizationColor}
+                          sx={{ fontWeight: 'bold', fontSize: '1rem' }}
+                        />
+                      </Box>
+                    </Box>
 
-                  {chartData.length > 0 && (
-                    <div className="chart-container">
-                      <h4>Wykres dzienny</h4>
-                      <ResponsiveContainer width="100%" height={300}>
-                        <BarChart data={chartData}>
-                          <CartesianGrid strokeDasharray="3 3" />
-                          <XAxis dataKey="date" />
-                          <YAxis />
-                          <Tooltip />
-                          <Legend />
-                          <Bar dataKey="Czas spędzony (h)" fill="#0052cc" />
-                          <Bar dataKey="Capacity (h)" fill="#28a745" />
-                        </BarChart>
-                      </ResponsiveContainer>
-                    </div>
-                  )}
+                    {chartData.length > 0 && (
+                      <Box sx={{ mb: 3 }}>
+                        <Typography variant="h6" gutterBottom>
+                          Wykres dzienny
+                        </Typography>
+                        <ResponsiveContainer width="100%" height={300}>
+                          <BarChart data={chartData}>
+                            <CartesianGrid strokeDasharray="3 3" />
+                            <XAxis dataKey="date" />
+                            <YAxis />
+                            <Tooltip />
+                            <Legend />
+                            <Bar dataKey="Czas spędzony (h)" fill="#0052cc" />
+                            <Bar dataKey="Capacity (h)" fill="#28a745" />
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </Box>
+                    )}
 
-                  <div className="daily-details">
-                    <h4>Szczegóły dzienne</h4>
-                    <table>
-                      <thead>
-                        <tr>
-                          <th>Data</th>
-                          <th>Czas spędzony (h)</th>
-                          <th>FTE</th>
-                          <th>Capacity (h)</th>
-                          <th>Wykorzystanie (%)</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {userData.daily_details.map((day, dayIndex) => {
-                          const dayUtilizationColor = day.utilization_percent > 100 ? '#dc3545' : 
-                                                     day.utilization_percent > 80 ? '#ffc107' : '#28a745';
-                          return (
-                            <tr key={dayIndex}>
-                              <td>{new Date(day.date).toLocaleDateString('pl-PL')}</td>
-                              <td>{day.hours_spent.toFixed(2)}</td>
-                              <td>{day.fte}</td>
-                              <td>{day.capacity_hours.toFixed(2)}</td>
-                              <td style={{ color: dayUtilizationColor, fontWeight: 'bold' }}>
-                                {day.utilization_percent.toFixed(1)}%
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
+                    <Typography variant="h6" gutterBottom>
+                      Szczegóły dzienne
+                    </Typography>
+                    <TableContainer>
+                      <Table size="small">
+                        <TableHead>
+                          <TableRow>
+                            <TableCell><strong>Data</strong></TableCell>
+                            <TableCell align="right"><strong>Czas spędzony (h)</strong></TableCell>
+                            <TableCell align="right"><strong>FTE</strong></TableCell>
+                            <TableCell align="right"><strong>Capacity (h)</strong></TableCell>
+                            <TableCell align="right"><strong>Wykorzystanie (%)</strong></TableCell>
+                          </TableRow>
+                        </TableHead>
+                        <TableBody>
+                          {userData.daily_details.map((day, dayIndex) => {
+                            const dayUtilizationColor = day.utilization_percent > 100 ? 'error' : 
+                                                       day.utilization_percent > 80 ? 'warning' : 'success';
+                            return (
+                              <TableRow key={dayIndex} hover>
+                                <TableCell>{new Date(day.date).toLocaleDateString('pl-PL')}</TableCell>
+                                <TableCell align="right">{day.hours_spent.toFixed(2)}</TableCell>
+                                <TableCell align="right">{day.fte}</TableCell>
+                                <TableCell align="right">{day.capacity_hours.toFixed(2)}</TableCell>
+                                <TableCell align="right">
+                                  <Chip 
+                                    label={`${day.utilization_percent.toFixed(1)}%`}
+                                    color={dayUtilizationColor}
+                                    size="small"
+                                  />
+                                </TableCell>
+                              </TableRow>
+                            );
+                          })}
+                        </TableBody>
+                      </Table>
+                    </TableContainer>
+                  </CardContent>
+                </Card>
               );
-            })
-            );
-          })()}
-        </div>
-      )}
-    </div>
+            })}
+          </Box>
+        )}
+      </Box>
+    </LocalizationProvider>
   );
 };
 
 export default TimeVerification;
-
