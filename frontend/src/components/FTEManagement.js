@@ -7,9 +7,7 @@ const API_BASE_URL = process.env.REACT_APP_API_URL ||
 
 const FTEManagement = () => {
   const [projects, setProjects] = useState([]);
-  const [filteredProjects, setFilteredProjects] = useState([]);
   const [users, setUsers] = useState([]);
-  const [filteredUsers, setFilteredUsers] = useState([]);
   const [assignments, setAssignments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedProject, setSelectedProject] = useState('');
@@ -19,8 +17,6 @@ const FTEManagement = () => {
   const [selectedEndDate, setSelectedEndDate] = useState(new Date().toISOString().split('T')[0]);
   const [fteValue, setFteValue] = useState(1.0);
   const [assignmentMode, setAssignmentMode] = useState('single'); // 'single' or 'range'
-  const [projectSearch, setProjectSearch] = useState('');
-  const [userSearch, setUserSearch] = useState('');
   const [dateRange, setDateRange] = useState({
     start: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
     end: new Date().toISOString().split('T')[0]
@@ -39,7 +35,6 @@ const FTEManagement = () => {
         (a.name || a.key).localeCompare(b.name || b.key, 'pl')
       );
       setProjects(sorted);
-      setFilteredProjects(sorted);
     } catch (err) {
       console.error('Błąd podczas ładowania projektów:', err);
     }
@@ -52,35 +47,10 @@ const FTEManagement = () => {
         (a.displayName || a.emailAddress || '').localeCompare(b.displayName || b.emailAddress || '', 'pl')
       );
       setUsers(sorted);
-      setFilteredUsers(sorted);
     } catch (err) {
       console.error('Błąd podczas ładowania użytkowników:', err);
     }
   };
-
-  useEffect(() => {
-    if (projectSearch) {
-      const filtered = projects.filter(p => 
-        (p.name || '').toLowerCase().includes(projectSearch.toLowerCase()) ||
-        (p.key || '').toLowerCase().includes(projectSearch.toLowerCase())
-      );
-      setFilteredProjects(filtered);
-    } else {
-      setFilteredProjects(projects);
-    }
-  }, [projectSearch, projects]);
-
-  useEffect(() => {
-    if (userSearch) {
-      const filtered = users.filter(u => 
-        (u.displayName || '').toLowerCase().includes(userSearch.toLowerCase()) ||
-        (u.emailAddress || '').toLowerCase().includes(userSearch.toLowerCase())
-      );
-      setFilteredUsers(filtered);
-    } else {
-      setFilteredUsers(users);
-    }
-  }, [userSearch, users]);
 
   const loadAssignments = async () => {
     try {
@@ -195,16 +165,9 @@ const FTEManagement = () => {
         <div className="form-row">
           <div className="form-group">
             <label>Projekt:</label>
-            <input
-              type="text"
-              placeholder="Wyszukaj projekt..."
-              value={projectSearch}
-              onChange={(e) => setProjectSearch(e.target.value)}
-              className="search-input"
-            />
             <select value={selectedProject} onChange={(e) => setSelectedProject(e.target.value)}>
               <option value="">Wybierz projekt</option>
-              {filteredProjects.map(p => (
+              {projects.map(p => (
                 <option key={p.key} value={p.key}>{p.name} ({p.key})</option>
               ))}
             </select>
@@ -212,16 +175,9 @@ const FTEManagement = () => {
 
           <div className="form-group">
             <label>Użytkownik:</label>
-            <input
-              type="text"
-              placeholder="Wyszukaj użytkownika..."
-              value={userSearch}
-              onChange={(e) => setUserSearch(e.target.value)}
-              className="search-input"
-            />
             <select value={selectedUser} onChange={(e) => setSelectedUser(e.target.value)}>
               <option value="">Wybierz użytkownika</option>
-              {filteredUsers.map(u => (
+              {users.map(u => (
                 <option key={u.accountId || u.emailAddress} value={u.emailAddress || u.displayName}>
                   {u.displayName} {u.emailAddress ? `(${u.emailAddress})` : ''}
                 </option>
@@ -305,43 +261,135 @@ const FTEManagement = () => {
         {loading ? (
           <div className="loading">Ładowanie...</div>
         ) : (
-          <table>
-            <thead>
-              <tr>
-                <th>Data</th>
-                <th>Użytkownik</th>
-                <th>Projekt</th>
-                <th>FTE</th>
-                <th>Capacity (h)</th>
-                <th>Akcje</th>
-              </tr>
-            </thead>
-            <tbody>
-              {assignments.length === 0 ? (
-                <tr>
-                  <td colSpan="6" className="no-data">Brak przypisań FTE w wybranym okresie</td>
-                </tr>
-              ) : (
-                assignments.map(assignment => (
-                  <tr key={assignment.id}>
-                    <td>{new Date(assignment.assignment_date).toLocaleDateString('pl-PL')}</td>
-                    <td>{assignment.user_display_name}</td>
-                    <td>{assignment.project_name} ({assignment.project_key})</td>
-                    <td>{assignment.fte_value}</td>
-                    <td>{(assignment.fte_value * 8).toFixed(1)}h</td>
-                    <td>
-                      <button 
-                        className="btn-danger"
-                        onClick={() => handleDelete(assignment.id)}
-                      >
-                        Usuń
-                      </button>
-                    </td>
+          (() => {
+            // Grupuj przypisania po użytkowniku i projekcie
+            const grouped = {};
+            assignments.forEach(assignment => {
+              const key = `${assignment.user_email}_${assignment.project_key}`;
+              if (!grouped[key]) {
+                grouped[key] = {
+                  user_email: assignment.user_email,
+                  user_display_name: assignment.user_display_name,
+                  project_key: assignment.project_key,
+                  project_name: assignment.project_name,
+                  dates: [],
+                  assignments: []
+                };
+              }
+              grouped[key].dates.push(assignment.assignment_date);
+              grouped[key].assignments.push(assignment);
+            });
+
+            // Sortuj daty i znajdź zakresy
+            Object.keys(grouped).forEach(key => {
+              const group = grouped[key];
+              group.dates.sort();
+              
+              // Znajdź ciągłe zakresy dat
+              const ranges = [];
+              let currentRange = { start: group.dates[0], end: group.dates[0], fte: group.assignments[0].fte_value };
+              
+              for (let i = 1; i < group.dates.length; i++) {
+                const prevDate = new Date(group.dates[i - 1]);
+                const currDate = new Date(group.dates[i]);
+                const daysDiff = (currDate - prevDate) / (1000 * 60 * 60 * 24);
+                const currAssignment = group.assignments.find(a => a.assignment_date === group.dates[i]);
+                
+                if (daysDiff === 1 && currAssignment.fte_value === currentRange.fte) {
+                  // Ciągły zakres z tym samym FTE
+                  currentRange.end = group.dates[i];
+                } else {
+                  // Nowy zakres
+                  ranges.push(currentRange);
+                  currentRange = { 
+                    start: group.dates[i], 
+                    end: group.dates[i], 
+                    fte: currAssignment.fte_value 
+                  };
+                }
+              }
+              ranges.push(currentRange);
+              
+              group.ranges = ranges;
+            });
+
+            const groupedArray = Object.values(grouped).sort((a, b) => {
+              const nameCompare = a.user_display_name.localeCompare(b.user_display_name, 'pl');
+              if (nameCompare !== 0) return nameCompare;
+              return a.project_name.localeCompare(b.project_name, 'pl');
+            });
+
+            return (
+              <table>
+                <thead>
+                  <tr>
+                    <th>Użytkownik</th>
+                    <th>Projekt</th>
+                    <th>Okres</th>
+                    <th>FTE</th>
+                    <th>Capacity (h/dzień)</th>
+                    <th>Akcje</th>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+                </thead>
+                <tbody>
+                  {groupedArray.length === 0 ? (
+                    <tr>
+                      <td colSpan="6" className="no-data">Brak przypisań FTE w wybranym okresie</td>
+                    </tr>
+                  ) : (
+                    groupedArray.map((group, groupIdx) => (
+                      <React.Fragment key={groupIdx}>
+                        {group.ranges.map((range, rangeIdx) => {
+                          const startDate = new Date(range.start);
+                          const endDate = new Date(range.end);
+                          const daysCount = Math.floor((endDate - startDate) / (1000 * 60 * 60 * 24)) + 1;
+                          const assignment = group.assignments.find(a => a.assignment_date === range.start);
+                          
+                          return (
+                            <tr key={`${groupIdx}-${rangeIdx}`}>
+                              {rangeIdx === 0 && (
+                                <td rowSpan={group.ranges.length} className="user-cell">
+                                  {group.user_display_name}
+                                </td>
+                              )}
+                              {rangeIdx === 0 && (
+                                <td rowSpan={group.ranges.length} className="project-cell">
+                                  {group.project_name} ({group.project_key})
+                                </td>
+                              )}
+                              <td>
+                                {startDate.toLocaleDateString('pl-PL')} - {endDate.toLocaleDateString('pl-PL')}
+                                {daysCount > 1 && <span className="days-count"> ({daysCount} dni)</span>}
+                              </td>
+                              <td>{range.fte}</td>
+                              <td>{(range.fte * 8).toFixed(1)}h</td>
+                              <td>
+                                <button 
+                                  className="btn-danger"
+                                  onClick={() => {
+                                    if (window.confirm('Czy na pewno chcesz usunąć wszystkie przypisania w tym zakresie?')) {
+                                      group.assignments
+                                        .filter(a => {
+                                          const aDate = new Date(a.assignment_date);
+                                          return aDate >= startDate && aDate <= endDate;
+                                        })
+                                        .forEach(a => handleDelete(a.id));
+                                    }
+                                  }}
+                                >
+                                  Usuń
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </React.Fragment>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            );
+          })()
         )}
       </div>
     </div>
