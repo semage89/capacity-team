@@ -1,14 +1,16 @@
 # Konfiguracja Supabase dla Capacity Team Planner
 
+## Informacje o projekcie
+
+- **Project ID**: `aqhcbgwmfuigeykmbmyn`
+- **Dashboard URL**: https://supabase.com/dashboard/project/aqhcbgwmfuigeykmbmyn
+
 ## Krok 1: Utworzenie projektu w Supabase
 
-1. Przejdź do https://supabase.com
-2. Zaloguj się lub utwórz konto
-3. Kliknij "New Project"
-4. Wypełnij dane projektu:
-   - Name: capacity-team-planner
-   - Database Password: (zapisz hasło!)
-   - Region: wybierz najbliższą
+✅ Projekt już utworzony!
+
+1. Przejdź do https://supabase.com/dashboard/project/aqhcbgwmfuigeykmbmyn
+2. Zaloguj się do swojego konta
 
 ## Krok 2: Utworzenie tabeli
 
@@ -26,20 +28,33 @@ Lub użyj migracji:
 
 1. W Supabase Dashboard przejdź do **Settings** → **Database**
 2. Znajdź sekcję **Connection string**
-3. Skopiuj **URI** (z hasłem)
-4. Format: `postgresql://postgres:[PASSWORD]@[HOST]:5432/postgres`
+3. Wybierz **URI** (z hasłem) lub **Connection pooling**
+4. Format connection string:
+   - **Direct connection**: `postgresql://postgres:[PASSWORD]@db.aqhcbgwmfuigeykmbmyn.supabase.co:5432/postgres`
+   - **Connection pooling**: `postgresql://postgres.aqhcbgwmfuigeykmbmyn:[PASSWORD]@aws-0-[REGION].pooler.supabase.com:6543/postgres`
+   
+   ⚠️ **Uwaga**: Zastąp `[PASSWORD]` swoim hasłem bazy danych i `[REGION]` regionem projektu (np. `eu-central-1`)
 
 ## Krok 4: Konfiguracja w Heroku
 
 Ustaw zmienną środowiskową `DATABASE_URL`:
 
 ```bash
-heroku config:set DATABASE_URL=postgresql://postgres:[PASSWORD]@[HOST]:5432/postgres -a capacity-team
+# Dla direct connection:
+heroku config:set DATABASE_URL=postgresql://postgres:[PASSWORD]@db.aqhcbgwmfuigeykmbmyn.supabase.co:5432/postgres -a capacity-team
+
+# LUB dla connection pooling (zalecane dla produkcji):
+heroku config:set DATABASE_URL=postgresql://postgres.aqhcbgwmfuigeykmbmyn:[PASSWORD]@aws-0-[REGION].pooler.supabase.com:6543/postgres -a capacity-team
 ```
 
 Lub przez dashboard Heroku:
 1. Settings → Config Vars
-2. Dodaj: `DATABASE_URL` = `postgresql://postgres:[PASSWORD]@[HOST]:5432/postgres`
+2. Dodaj: `DATABASE_URL` = `postgresql://postgres:[PASSWORD]@db.aqhcbgwmfuigeykmbmyn.supabase.co:5432/postgres`
+
+⚠️ **Pamiętaj**: 
+- Zastąp `[PASSWORD]` swoim hasłem bazy danych
+- Zastąp `[REGION]` regionem projektu (sprawdź w Settings → Database)
+- Hasło znajdziesz w Settings → Database → Database password (lub musisz je zresetować)
 
 ## Krok 5: Weryfikacja
 
