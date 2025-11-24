@@ -6,30 +6,60 @@ const API_BASE_URL = process.env.REACT_APP_API_URL ||
   (process.env.NODE_ENV === 'production' ? '/api' : 'http://localhost:5000/api');
 
 const TeamCalendar = () => {
-  const [calendarData, setCalendarData] = useState(null);
+  const [assignments, setAssignments] = useState([]);
   const [optimizationData, setOptimizationData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [filters, setFilters] = useState({
+    assignment_date: new Date().toISOString().split('T')[0],
     start_date: new Date().toISOString().split('T')[0],
     end_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-    project_key: '',
-    user_email: ''
+    view_mode: 'single' // 'single' or 'range'
   });
   const [editingCell, setEditingCell] = useState(null);
   const [projects, setProjects] = useState([]);
   const [users, setUsers] = useState([]);
+  const [projectSearch, setProjectSearch] = useState('');
+  const [userSearch, setUserSearch] = useState('');
+  const [filteredProjects, setFilteredProjects] = useState([]);
+  const [filteredUsers, setFilteredUsers] = useState([]);
 
   useEffect(() => {
     loadProjects();
     loadUsers();
-    loadCalendar();
+    loadAssignments();
     loadOptimization();
-  }, [filters]);
+  }, [filters.assignment_date, filters.start_date, filters.end_date, filters.view_mode]);
+
+  useEffect(() => {
+    if (projectSearch) {
+      const filtered = projects.filter(p => 
+        (p.name || '').toLowerCase().includes(projectSearch.toLowerCase()) ||
+        (p.key || '').toLowerCase().includes(projectSearch.toLowerCase())
+      );
+      setFilteredProjects(filtered);
+    } else {
+      setFilteredProjects(projects);
+    }
+  }, [projectSearch, projects]);
+
+  useEffect(() => {
+    if (userSearch) {
+      const filtered = users.filter(u => 
+        (u.displayName || '').toLowerCase().includes(userSearch.toLowerCase()) ||
+        (u.emailAddress || '').toLowerCase().includes(userSearch.toLowerCase())
+      );
+      setFilteredUsers(filtered);
+    } else {
+      setFilteredUsers(users);
+    }
+  }, [userSearch, users]);
 
   const loadProjects = async () => {
     try {
       const response = await axios.get(`${API_BASE_URL}/projects`);
-      setProjects(response.data.sort((a, b) => (a.name || a.key).localeCompare(b.name || b.key, 'pl')));
+      const sorted = response.data.sort((a, b) => (a.name || a.key).localeCompare(b.name || b.key, 'pl'));
+      setProjects(sorted);
+      setFilteredProjects(sorted);
     } catch (err) {
       console.error('Błąd podczas ładowania projektów:', err);
     }
@@ -38,26 +68,30 @@ const TeamCalendar = () => {
   const loadUsers = async () => {
     try {
       const response = await axios.get(`${API_BASE_URL}/users`);
-      setUsers(response.data.sort((a, b) => (a.displayName || a.emailAddress || '').localeCompare(b.displayName || b.emailAddress || '', 'pl')));
+      const sorted = response.data.sort((a, b) => (a.displayName || a.emailAddress || '').localeCompare(b.displayName || b.emailAddress || '', 'pl'));
+      setUsers(sorted);
+      setFilteredUsers(sorted);
     } catch (err) {
       console.error('Błąd podczas ładowania użytkowników:', err);
     }
   };
 
-  const loadCalendar = async () => {
+  const loadAssignments = async () => {
     try {
       setLoading(true);
-      const params = {
-        start_date: filters.start_date,
-        end_date: filters.end_date
-      };
-      if (filters.project_key) params.project_key = filters.project_key;
-      if (filters.user_email) params.user_email = filters.user_email;
+      const params = {};
+      
+      if (filters.view_mode === 'single') {
+        params.assignment_date = filters.assignment_date;
+      } else {
+        params.start_date = filters.start_date;
+        params.end_date = filters.end_date;
+      }
 
-      const response = await axios.get(`${API_BASE_URL}/team/calendar`, { params });
-      setCalendarData(response.data);
+      const response = await axios.get(`${API_BASE_URL}/fte`, { params });
+      setAssignments(response.data);
     } catch (err) {
-      console.error('Błąd podczas ładowania kalendarza:', err);
+      console.error('Błąd podczas ładowania przypisań:', err);
     } finally {
       setLoading(false);
     }
@@ -66,8 +100,8 @@ const TeamCalendar = () => {
   const loadOptimization = async () => {
     try {
       const params = {
-        start_date: filters.start_date,
-        end_date: filters.end_date
+        start_date: filters.view_mode === 'single' ? filters.assignment_date : filters.start_date,
+        end_date: filters.view_mode === 'single' ? filters.assignment_date : filters.end_date
       };
       const response = await axios.get(`${API_BASE_URL}/optimization/suggestions`, { params });
       setOptimizationData(response.data);
@@ -76,7 +110,23 @@ const TeamCalendar = () => {
     }
   };
 
-  const handleCellEdit = async (userEmail, date, projectKey, newFte) => {
+  const getAssignmentForUserProject = (userEmail, projectKey, date) => {
+    return assignments.find(a => 
+      a.user_email === userEmail && 
+      a.project_key === projectKey && 
+      a.assignment_date === date
+    );
+  };
+
+  const getUserTotalFte = (userEmail, date) => {
+    const userAssignments = assignments.filter(a => 
+      a.user_email === userEmail && 
+      a.assignment_date === date
+    );
+    return userAssignments.reduce((sum, a) => sum + a.fte_value, 0);
+  };
+
+  const handleCellEdit = async (userEmail, projectKey, date, newFte) => {
     try {
       const project = projects.find(p => p.key === projectKey);
       const user = users.find(u => u.emailAddress === userEmail || u.displayName === userEmail);
@@ -86,15 +136,16 @@ const TeamCalendar = () => {
         return;
       }
 
-      // Sprawdź czy przypisanie istnieje
-      const existing = calendarData.calendar
-        .find(u => u.user_email === userEmail)
-        ?.days[date]?.projects
-        .find(p => p.project_key === projectKey);
+      const existing = getAssignmentForUserProject(userEmail, projectKey, date);
 
-      if (existing) {
+      if (parseFloat(newFte) === 0) {
+        // Usuń przypisanie jeśli FTE = 0
+        if (existing) {
+          await axios.delete(`${API_BASE_URL}/fte/${existing.id}`);
+        }
+      } else if (existing) {
         // Aktualizuj istniejące
-        await axios.put(`${API_BASE_URL}/fte/${existing.assignment_id}`, {
+        await axios.put(`${API_BASE_URL}/fte/${existing.id}`, {
           fte_value: parseFloat(newFte)
         });
       } else {
@@ -110,35 +161,24 @@ const TeamCalendar = () => {
       }
 
       setEditingCell(null);
-      loadCalendar();
+      loadAssignments();
+      loadOptimization();
     } catch (err) {
       console.error('Błąd podczas edycji:', err);
       alert('Błąd podczas zapisywania: ' + (err.response?.data?.error || err.message));
     }
   };
 
-  const generateDateRange = () => {
-    const dates = [];
-    const start = new Date(filters.start_date);
-    const end = new Date(filters.end_date);
-    const current = new Date(start);
-
-    while (current <= end) {
-      dates.push(new Date(current));
-      current.setDate(current.getDate() + 1);
-    }
-
-    return dates;
-  };
-
-  const getCellColor = (totalFte, overloaded, underutilized) => {
-    if (overloaded) return '#ffebee'; // Czerwony - przeciążenie
-    if (underutilized) return '#fff3e0'; // Pomarańczowy - niedobór
-    if (totalFte === 0) return '#f5f5f5'; // Szary - brak
+  const getCellColor = (fte, totalFte) => {
+    if (fte === 0) return '#f5f5f5'; // Szary - brak
+    if (totalFte > 1.0) return '#ffebee'; // Czerwony - przeciążenie
+    if (totalFte < 0.8 && totalFte > 0) return '#fff3e0'; // Pomarańczowy - niedobór
     return '#e8f5e9'; // Zielony - OK
   };
 
-  const dates = generateDateRange();
+  const currentDate = filters.view_mode === 'single' 
+    ? filters.assignment_date 
+    : filters.start_date;
 
   return (
     <div className="team-calendar">

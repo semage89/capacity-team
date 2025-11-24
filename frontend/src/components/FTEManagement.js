@@ -12,6 +12,7 @@ const FTEManagement = () => {
   const [loading, setLoading] = useState(true);
   const [selectedProject, setSelectedProject] = useState('');
   const [selectedUser, setSelectedUser] = useState('');
+  const [filterUser, setFilterUser] = useState(''); // Osobny stan dla filtra w tabeli
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   const [selectedStartDate, setSelectedStartDate] = useState(new Date().toISOString().split('T')[0]);
   const [selectedEndDate, setSelectedEndDate] = useState(new Date().toISOString().split('T')[0]);
@@ -236,6 +237,22 @@ const FTEManagement = () => {
       <div className="fte-filters">
         <h3>Filtry</h3>
         <div className="form-row">
+          <div className="form-group">
+            <label>Użytkownik:</label>
+            <select 
+              value={filterUser} 
+              onChange={(e) => {
+                setFilterUser(e.target.value);
+              }}
+            >
+              <option value="">Wszyscy użytkownicy</option>
+              {users.map(u => (
+                <option key={u.accountId || u.emailAddress} value={u.emailAddress || u.displayName}>
+                  {u.displayName} {u.emailAddress ? `(${u.emailAddress})` : ''}
+                </option>
+              ))}
+            </select>
+          </div>
           <div className="form-group">
             <label>Od:</label>
             <input

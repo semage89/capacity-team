@@ -647,8 +647,30 @@ def verify_time():
     # Grupuj worklogi po użytkownikach i datach
     user_time = {}  # {user_email: {date: hours}}
     for worklog in worklogs:
-        user = worklog.get('author', {}).get('emailAddress', worklog.get('author', {}).get('displayName', 'Unknown'))
-        work_date = worklog.get('startDate', worklog.get('dateStarted', ''))
+        # Różne formaty danych z Tempo API
+        author = worklog.get('author', {})
+        user = author.get('emailAddress') or author.get('accountId') or author.get('displayName') or 'Unknown'
+        
+        # Różne formaty dat z Tempo
+        work_date = (worklog.get('startDate') or 
+                    worklog.get('dateStarted') or 
+                    worklog.get('start') or 
+                    worklog.get('date'))
+        
+        # Jeśli data jest w formacie timestamp, przekonwertuj
+        if isinstance(work_date, (int, float)):
+            work_date = datetime.fromtimestamp(work_date / 1000 if work_date > 1e10 else work_date).strftime('%Y-%m-%d')
+        elif isinstance(work_date, str):
+            # Spróbuj różne formaty dat
+            try:
+                if 'T' in work_date:
+                    work_date = datetime.fromisoformat(work_date.replace('Z', '+00:00')).strftime('%Y-%m-%d')
+                else:
+                    work_date = datetime.strptime(work_date, '%Y-%m-%d').strftime('%Y-%m-%d')
+            except:
+                # Jeśli nie można sparsować, użyj jak jest
+                pass
+        
         time_spent = worklog.get('timeSpentSeconds', 0) / 3600  # godziny
         
         if user not in user_time:

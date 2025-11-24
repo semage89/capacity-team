@@ -14,6 +14,7 @@ const TimeVerification = () => {
   const [filters, setFilters] = useState({
     project_key: '',
     user_email: '',
+    capacity_status: '', // 'all', 'overloaded', 'underutilized', 'optimal'
     start_date: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
     end_date: new Date().toISOString().split('T')[0]
   });
@@ -85,7 +86,7 @@ const TimeVerification = () => {
               onChange={(e) => setFilters({...filters, project_key: e.target.value})}
             >
               <option value="">Wszystkie projekty</option>
-              {projects.map(p => (
+              {projects.sort((a, b) => (a.name || a.key).localeCompare(b.name || b.key, 'pl')).map(p => (
                 <option key={p.key} value={p.key}>{p.name} ({p.key})</option>
               ))}
             </select>
@@ -98,11 +99,24 @@ const TimeVerification = () => {
               onChange={(e) => setFilters({...filters, user_email: e.target.value})}
             >
               <option value="">Wszyscy użytkownicy</option>
-              {users.map(u => (
+              {users.sort((a, b) => (a.displayName || a.emailAddress || '').localeCompare(b.displayName || b.emailAddress || '', 'pl')).map(u => (
                 <option key={u.accountId || u.emailAddress} value={u.emailAddress || u.displayName}>
                   {u.displayName} {u.emailAddress ? `(${u.emailAddress})` : ''}
                 </option>
               ))}
+            </select>
+          </div>
+
+          <div className="form-group">
+            <label>Status Capacity:</label>
+            <select 
+              value={filters.capacity_status} 
+              onChange={(e) => setFilters({...filters, capacity_status: e.target.value})}
+            >
+              <option value="">Wszystkie</option>
+              <option value="overloaded">Przeciążenie (&gt;100%)</option>
+              <option value="optimal">Optymalne (80-100%)</option>
+              <option value="underutilized">Niedobór (&lt;80%)</option>
             </select>
           </div>
 
@@ -136,12 +150,29 @@ const TimeVerification = () => {
 
       {verificationData && verificationData.results && (
         <div className="verification-results">
-          {verificationData.results.length === 0 ? (
-            <div className="no-data">
-              Brak danych do wyświetlenia dla wybranych filtrów
-            </div>
-          ) : (
-            verificationData.results.map((userData, index) => {
+          {(() => {
+            let filteredResults = verificationData.results;
+            
+            // Filtruj po statusie capacity
+            if (filters.capacity_status) {
+              filteredResults = filteredResults.filter(userData => {
+                if (filters.capacity_status === 'overloaded') {
+                  return userData.utilization_percent > 100;
+                } else if (filters.capacity_status === 'optimal') {
+                  return userData.utilization_percent >= 80 && userData.utilization_percent <= 100;
+                } else if (filters.capacity_status === 'underutilized') {
+                  return userData.utilization_percent < 80 && userData.utilization_percent > 0;
+                }
+                return true;
+              });
+            }
+            
+            return filteredResults.length === 0 ? (
+              <div className="no-data">
+                Brak danych do wyświetlenia dla wybranych filtrów
+              </div>
+            ) : (
+              filteredResults.map((userData, index) => {
               const chartData = prepareChartData(userData);
               const utilizationColor = userData.utilization_percent > 100 ? '#dc3545' : 
                                      userData.utilization_percent > 80 ? '#ffc107' : '#28a745';
