@@ -236,6 +236,17 @@ except Exception as e:
 # Inicjalizacja bazy danych
 with app.app_context():
     db.create_all()
+    # Usuń przypisania na weekendy przy starcie
+    try:
+        all_assignments = FTEAssignment.query.all()
+        weekend_assignments = [a for a in all_assignments if a.assignment_date.weekday() >= 5]
+        if weekend_assignments:
+            for assignment in weekend_assignments:
+                db.session.delete(assignment)
+            db.session.commit()
+            print(f"✓ Usunięto {len(weekend_assignments)} przypisań na weekendy przy starcie")
+    except Exception as e:
+        print(f"⚠ Błąd podczas czyszczenia weekendów: {e}")
 
 
 @app.route('/api/health', methods=['GET'])
