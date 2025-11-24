@@ -253,7 +253,8 @@ const TimeVerification = () => {
                 </div>
               );
             })
-          )}
+            );
+          })()}
         </div>
       )}
     </div>
