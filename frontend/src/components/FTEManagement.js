@@ -26,8 +26,11 @@ const FTEManagement = () => {
   useEffect(() => {
     loadProjects();
     loadUsers();
+  }, []);
+
+  useEffect(() => {
     loadAssignments();
-  }, [dateRange]);
+  }, [dateRange, filterUser]);
 
   const loadProjects = async () => {
     try {
@@ -61,7 +64,7 @@ const FTEManagement = () => {
         end_date: dateRange.end
       };
       if (selectedProject) params.project_key = selectedProject;
-      if (selectedUser) params.user_email = selectedUser;
+      if (filterUser) params.user_email = filterUser;
 
       const response = await axios.get(`${API_BASE_URL}/fte`, { params });
       setAssignments(response.data);
