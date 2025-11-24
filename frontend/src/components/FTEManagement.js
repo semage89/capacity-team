@@ -7,13 +7,20 @@ const API_BASE_URL = process.env.REACT_APP_API_URL ||
 
 const FTEManagement = () => {
   const [projects, setProjects] = useState([]);
+  const [filteredProjects, setFilteredProjects] = useState([]);
   const [users, setUsers] = useState([]);
+  const [filteredUsers, setFilteredUsers] = useState([]);
   const [assignments, setAssignments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedProject, setSelectedProject] = useState('');
   const [selectedUser, setSelectedUser] = useState('');
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+  const [selectedStartDate, setSelectedStartDate] = useState(new Date().toISOString().split('T')[0]);
+  const [selectedEndDate, setSelectedEndDate] = useState(new Date().toISOString().split('T')[0]);
   const [fteValue, setFteValue] = useState(1.0);
+  const [assignmentMode, setAssignmentMode] = useState('single'); // 'single' or 'range'
+  const [projectSearch, setProjectSearch] = useState('');
+  const [userSearch, setUserSearch] = useState('');
   const [dateRange, setDateRange] = useState({
     start: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
     end: new Date().toISOString().split('T')[0]
@@ -28,7 +35,11 @@ const FTEManagement = () => {
   const loadProjects = async () => {
     try {
       const response = await axios.get(`${API_BASE_URL}/projects`);
-      setProjects(response.data);
+      const sorted = response.data.sort((a, b) => 
+        (a.name || a.key).localeCompare(b.name || b.key, 'pl')
+      );
+      setProjects(sorted);
+      setFilteredProjects(sorted);
     } catch (err) {
       console.error('Błąd podczas ładowania projektów:', err);
     }
@@ -37,11 +48,39 @@ const FTEManagement = () => {
   const loadUsers = async () => {
     try {
       const response = await axios.get(`${API_BASE_URL}/users`);
-      setUsers(response.data);
+      const sorted = response.data.sort((a, b) => 
+        (a.displayName || a.emailAddress || '').localeCompare(b.displayName || b.emailAddress || '', 'pl')
+      );
+      setUsers(sorted);
+      setFilteredUsers(sorted);
     } catch (err) {
       console.error('Błąd podczas ładowania użytkowników:', err);
     }
   };
+
+  useEffect(() => {
+    if (projectSearch) {
+      const filtered = projects.filter(p => 
+        (p.name || '').toLowerCase().includes(projectSearch.toLowerCase()) ||
+        (p.key || '').toLowerCase().includes(projectSearch.toLowerCase())
+      );
+      setFilteredProjects(filtered);
+    } else {
+      setFilteredProjects(projects);
+    }
+  }, [projectSearch, projects]);
+
+  useEffect(() => {
+    if (userSearch) {
+      const filtered = users.filter(u => 
+        (u.displayName || '').toLowerCase().includes(userSearch.toLowerCase()) ||
+        (u.emailAddress || '').toLowerCase().includes(userSearch.toLowerCase())
+      );
+      setFilteredUsers(filtered);
+    } else {
+      setFilteredUsers(users);
+    }
+  }, [userSearch, users]);
 
   const loadAssignments = async () => {
     try {
@@ -63,8 +102,18 @@ const FTEManagement = () => {
   };
 
   const handleSave = async () => {
-    if (!selectedProject || !selectedUser || !selectedDate) {
-      alert('Proszę wypełnić wszystkie pola');
+    if (!selectedProject || !selectedUser) {
+      alert('Proszę wybrać projekt i użytkownika');
+      return;
+    }
+
+    if (assignmentMode === 'single' && !selectedDate) {
+      alert('Proszę wybrać datę');
+      return;
+    }
+
+    if (assignmentMode === 'range' && (!selectedStartDate || !selectedEndDate)) {
+      alert('Proszę wybrać zakres dat');
       return;
     }
 
@@ -72,21 +121,34 @@ const FTEManagement = () => {
     const user = users.find(u => u.emailAddress === selectedUser || u.displayName === selectedUser);
 
     try {
-      await axios.post(`${API_BASE_URL}/fte`, {
-        user_email: selectedUser,
-        user_display_name: user?.displayName || selectedUser,
-        project_key: selectedProject,
-        project_name: project?.name || selectedProject,
-        assignment_date: selectedDate,
-        fte_value: parseFloat(fteValue)
-      });
+      if (assignmentMode === 'single') {
+        await axios.post(`${API_BASE_URL}/fte`, {
+          user_email: selectedUser,
+          user_display_name: user?.displayName || selectedUser,
+          project_key: selectedProject,
+          project_name: project?.name || selectedProject,
+          assignment_date: selectedDate,
+          fte_value: parseFloat(fteValue)
+        });
+        alert('Przypisanie FTE zostało zapisane');
+      } else {
+        const response = await axios.post(`${API_BASE_URL}/fte/range`, {
+          user_email: selectedUser,
+          user_display_name: user?.displayName || selectedUser,
+          project_key: selectedProject,
+          project_name: project?.name || selectedProject,
+          start_date: selectedStartDate,
+          end_date: selectedEndDate,
+          fte_value: parseFloat(fteValue)
+        });
+        alert(`Utworzono ${response.data.created} przypisań, zaktualizowano ${response.data.updated}`);
+      }
 
-      alert('Przypisanie FTE zostało zapisane');
       loadAssignments();
       setFteValue(1.0);
     } catch (err) {
       console.error('Błąd podczas zapisywania:', err);
-      alert('Błąd podczas zapisywania przypisania FTE');
+      alert('Błąd podczas zapisywania przypisania FTE: ' + (err.response?.data?.error || err.message));
     }
   };
 
@@ -108,12 +170,41 @@ const FTEManagement = () => {
 
       <div className="fte-form">
         <h3>Nowe przypisanie FTE</h3>
+        
+        <div className="mode-selector">
+          <label>
+            <input
+              type="radio"
+              value="single"
+              checked={assignmentMode === 'single'}
+              onChange={(e) => setAssignmentMode(e.target.value)}
+            />
+            Pojedynczy dzień
+          </label>
+          <label>
+            <input
+              type="radio"
+              value="range"
+              checked={assignmentMode === 'range'}
+              onChange={(e) => setAssignmentMode(e.target.value)}
+            />
+            Okres czasu
+          </label>
+        </div>
+
         <div className="form-row">
           <div className="form-group">
             <label>Projekt:</label>
+            <input
+              type="text"
+              placeholder="Wyszukaj projekt..."
+              value={projectSearch}
+              onChange={(e) => setProjectSearch(e.target.value)}
+              className="search-input"
+            />
             <select value={selectedProject} onChange={(e) => setSelectedProject(e.target.value)}>
               <option value="">Wybierz projekt</option>
-              {projects.map(p => (
+              {filteredProjects.map(p => (
                 <option key={p.key} value={p.key}>{p.name} ({p.key})</option>
               ))}
             </select>
@@ -121,9 +212,16 @@ const FTEManagement = () => {
 
           <div className="form-group">
             <label>Użytkownik:</label>
+            <input
+              type="text"
+              placeholder="Wyszukaj użytkownika..."
+              value={userSearch}
+              onChange={(e) => setUserSearch(e.target.value)}
+              className="search-input"
+            />
             <select value={selectedUser} onChange={(e) => setSelectedUser(e.target.value)}>
               <option value="">Wybierz użytkownika</option>
-              {users.map(u => (
+              {filteredUsers.map(u => (
                 <option key={u.accountId || u.emailAddress} value={u.emailAddress || u.displayName}>
                   {u.displayName} {u.emailAddress ? `(${u.emailAddress})` : ''}
                 </option>
@@ -131,14 +229,35 @@ const FTEManagement = () => {
             </select>
           </div>
 
-          <div className="form-group">
-            <label>Data:</label>
-            <input
-              type="date"
-              value={selectedDate}
-              onChange={(e) => setSelectedDate(e.target.value)}
-            />
-          </div>
+          {assignmentMode === 'single' ? (
+            <div className="form-group">
+              <label>Data:</label>
+              <input
+                type="date"
+                value={selectedDate}
+                onChange={(e) => setSelectedDate(e.target.value)}
+              />
+            </div>
+          ) : (
+            <>
+              <div className="form-group">
+                <label>Od:</label>
+                <input
+                  type="date"
+                  value={selectedStartDate}
+                  onChange={(e) => setSelectedStartDate(e.target.value)}
+                />
+              </div>
+              <div className="form-group">
+                <label>Do:</label>
+                <input
+                  type="date"
+                  value={selectedEndDate}
+                  onChange={(e) => setSelectedEndDate(e.target.value)}
+                />
+              </div>
+            </>
+          )}
 
           <div className="form-group">
             <label>FTE (0.0 - 1.0):</label>

@@ -4,6 +4,7 @@ import Header from './components/Header';
 import FTEManagement from './components/FTEManagement';
 import TimeVerification from './components/TimeVerification';
 import CapacityDashboard from './components/CapacityDashboard';
+import TeamCalendar from './components/TeamCalendar';
 
 const API_BASE_URL = process.env.REACT_APP_API_URL || 
   (process.env.NODE_ENV === 'production' ? '/api' : 'http://localhost:5000/api');
@@ -16,6 +17,12 @@ function App() {
       <Header />
       <div className="container">
         <div className="tabs">
+          <button 
+            className={activeTab === 'calendar' ? 'active' : ''}
+            onClick={() => setActiveTab('calendar')}
+          >
+            📅 Kalendarz Zespołu
+          </button>
           <button 
             className={activeTab === 'fte' ? 'active' : ''}
             onClick={() => setActiveTab('fte')}
@@ -37,6 +44,7 @@ function App() {
         </div>
 
         <div className="content">
+          {activeTab === 'calendar' && <TeamCalendar />}
           {activeTab === 'fte' && <FTEManagement />}
           {activeTab === 'verification' && <TimeVerification />}
           {activeTab === 'dashboard' && <CapacityDashboard />}

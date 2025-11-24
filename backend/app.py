@@ -351,6 +351,70 @@ def delete_fte_assignment(assignment_id):
     return jsonify({'message': 'Przypisanie FTE zostało usunięte'}), 200
 
 
+@app.route('/api/fte/range', methods=['POST'])
+def create_fte_range():
+    """Tworzy przypisania FTE na okres czasu"""
+    data = request.json
+    
+    required_fields = ['user_email', 'user_display_name', 'project_key', 'project_name', 'start_date', 'end_date', 'fte_value']
+    for field in required_fields:
+        if field not in data:
+            return jsonify({'error': f'Brakuje pola: {field}'}), 400
+    
+    fte_value = float(data['fte_value'])
+    if fte_value < 0 or fte_value > 1:
+        return jsonify({'error': 'FTE musi być między 0.0 a 1.0'}), 400
+    
+    start_date = datetime.fromisoformat(data['start_date']).date()
+    end_date = datetime.fromisoformat(data['end_date']).date()
+    
+    if start_date > end_date:
+        return jsonify({'error': 'Data początkowa musi być przed datą końcową'}), 400
+    
+    # Generuj wszystkie dni w zakresie (tylko dni robocze - pn-pt)
+    created = []
+    updated = []
+    current = start_date
+    
+    while current <= end_date:
+        # Pomiń weekendy (opcjonalnie - można usunąć jeśli chcesz wszystkie dni)
+        # if current.weekday() < 5:  # 0-4 to poniedziałek-piątek
+        existing = FTEAssignment.query.filter_by(
+            user_email=data['user_email'],
+            project_key=data['project_key'],
+            assignment_date=current
+        ).first()
+        
+        if existing:
+            existing.fte_value = fte_value
+            existing.user_display_name = data['user_display_name']
+            existing.project_name = data['project_name']
+            existing.updated_at = datetime.now()
+            updated.append(existing.to_dict())
+        else:
+            assignment = FTEAssignment(
+                user_email=data['user_email'],
+                user_display_name=data['user_display_name'],
+                project_key=data['project_key'],
+                project_name=data['project_name'],
+                assignment_date=current,
+                fte_value=fte_value
+            )
+            db.session.add(assignment)
+            created.append(assignment.to_dict())
+        
+        current += timedelta(days=1)
+    
+    db.session.commit()
+    
+    return jsonify({
+        'message': f'Utworzono {len(created)} nowych przypisań, zaktualizowano {len(updated)} istniejących',
+        'created': len(created),
+        'updated': len(updated),
+        'total_days': (end_date - start_date).days + 1
+    }), 201
+
+
 @app.route('/api/fte/bulk', methods=['POST'])
 def bulk_create_fte():
     """Tworzy wiele przypisań FTE naraz"""
@@ -413,6 +477,140 @@ def bulk_create_fte():
 
 
 # ========== Time Verification Endpoints ==========
+
+@app.route('/api/team/calendar', methods=['GET'])
+def get_team_calendar():
+    """Pobiera dane kalendarza zespołu z alokacjami FTE"""
+    start_date = request.args.get('start_date', datetime.now().strftime('%Y-%m-%d'))
+    end_date = request.args.get('end_date', (datetime.now() + timedelta(days=30)).strftime('%Y-%m-%d'))
+    project_key = request.args.get('project_key')
+    user_email = request.args.get('user_email')
+    
+    # Pobierz wszystkie przypisania FTE w zakresie
+    query = FTEAssignment.query.filter(
+        FTEAssignment.assignment_date >= datetime.fromisoformat(start_date).date(),
+        FTEAssignment.assignment_date <= datetime.fromisoformat(end_date).date()
+    )
+    
+    if project_key:
+        query = query.filter(FTEAssignment.project_key == project_key)
+    if user_email:
+        query = query.filter(FTEAssignment.user_email == user_email)
+    
+    assignments = query.order_by(FTEAssignment.assignment_date, FTEAssignment.user_email).all()
+    
+    # Grupuj po użytkownikach i datach
+    calendar_data = {}
+    for assignment in assignments:
+        user_key = assignment.user_email
+        date_str = assignment.assignment_date.isoformat()
+        
+        if user_key not in calendar_data:
+            calendar_data[user_key] = {
+                'user_email': assignment.user_email,
+                'user_display_name': assignment.user_display_name,
+                'days': {}
+            }
+        
+        if date_str not in calendar_data[user_key]['days']:
+            calendar_data[user_key]['days'][date_str] = []
+        
+        calendar_data[user_key]['days'][date_str].append({
+            'project_key': assignment.project_key,
+            'project_name': assignment.project_name,
+            'fte': assignment.fte_value,
+            'assignment_id': assignment.id
+        })
+    
+    # Oblicz total FTE per dzień i wykryj przeciążenia
+    for user_key, user_data in calendar_data.items():
+        for date_str, projects in user_data['days'].items():
+            total_fte = sum(p['fte'] for p in projects)
+            user_data['days'][date_str] = {
+                'projects': projects,
+                'total_fte': round(total_fte, 2),
+                'overloaded': total_fte > 1.0,
+                'underutilized': total_fte < 0.8 and total_fte > 0
+            }
+    
+    return jsonify({
+        'start_date': start_date,
+        'end_date': end_date,
+        'calendar': list(calendar_data.values())
+    })
+
+
+@app.route('/api/optimization/suggestions', methods=['GET'])
+def get_optimization_suggestions():
+    """Zwraca sugestie optymalizacji obłożenia pracy"""
+    start_date = request.args.get('start_date', datetime.now().strftime('%Y-%m-%d'))
+    end_date = request.args.get('end_date', (datetime.now() + timedelta(days=30)).strftime('%Y-%m-%d'))
+    
+    # Pobierz wszystkie przypisania
+    assignments = FTEAssignment.query.filter(
+        FTEAssignment.assignment_date >= datetime.fromisoformat(start_date).date(),
+        FTEAssignment.assignment_date <= datetime.fromisoformat(end_date).date()
+    ).all()
+    
+    # Analizuj przeciążenia i niedobory
+    overloaded = []
+    underutilized = []
+    conflicts = []
+    
+    # Grupuj po użytkownikach i datach
+    user_days = {}
+    for assignment in assignments:
+        key = f"{assignment.user_email}_{assignment.assignment_date.isoformat()}"
+        if key not in user_days:
+            user_days[key] = {
+                'user': assignment.user_email,
+                'user_display_name': assignment.user_display_name,
+                'date': assignment.assignment_date.isoformat(),
+                'projects': [],
+                'total_fte': 0
+            }
+        user_days[key]['projects'].append({
+            'project_key': assignment.project_key,
+            'project_name': assignment.project_name,
+            'fte': assignment.fte_value
+        })
+        user_days[key]['total_fte'] += assignment.fte_value
+    
+    # Wykryj problemy
+    for key, day_data in user_days.items():
+        if day_data['total_fte'] > 1.0:
+            overloaded.append({
+                'user_email': day_data['user'],
+                'user_display_name': day_data['user_display_name'],
+                'date': day_data['date'],
+                'total_fte': round(day_data['total_fte'], 2),
+                'overload': round(day_data['total_fte'] - 1.0, 2),
+                'projects': day_data['projects'],
+                'suggestion': f"Zmniejsz alokację o {round((day_data['total_fte'] - 1.0) * 100, 1)}%"
+            })
+        elif day_data['total_fte'] < 0.8 and day_data['total_fte'] > 0:
+            underutilized.append({
+                'user_email': day_data['user'],
+                'user_display_name': day_data['user_display_name'],
+                'date': day_data['date'],
+                'total_fte': round(day_data['total_fte'], 2),
+                'available_capacity': round(1.0 - day_data['total_fte'], 2),
+                'projects': day_data['projects'],
+                'suggestion': f"Dostępna pojemność: {round((1.0 - day_data['total_fte']) * 100, 1)}%"
+            })
+    
+    return jsonify({
+        'start_date': start_date,
+        'end_date': end_date,
+        'overloaded': overloaded,
+        'underutilized': underutilized,
+        'summary': {
+            'total_overloaded_days': len(overloaded),
+            'total_underutilized_days': len(underutilized),
+            'overload_percentage': round(len(overloaded) / max(len(user_days), 1) * 100, 1) if user_days else 0
+        }
+    })
+
 
 @app.route('/api/verification/time', methods=['GET'])
 def verify_time():
