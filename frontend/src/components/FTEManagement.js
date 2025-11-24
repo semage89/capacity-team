@@ -333,7 +333,7 @@ const FTEManagement = () => {
                       setSelectedDate(newValue);
                     }}
                     shouldDisableDate={(date) => date.getDay() === 0 || date.getDay() === 6}
-                    renderInput={(params) => <TextField {...params} fullWidth />}
+                    slotProps={{ textField: { fullWidth: true } }}
                   />
                 </Grid>
               ) : (
@@ -350,7 +350,7 @@ const FTEManagement = () => {
                         setSelectedStartDate(newValue);
                       }}
                       shouldDisableDate={(date) => date.getDay() === 0 || date.getDay() === 6}
-                      renderInput={(params) => <TextField {...params} fullWidth />}
+                      slotProps={{ textField: { fullWidth: true } }}
                     />
                   </Grid>
                   <Grid item xs={12} sm={6} md={4}>
@@ -366,7 +366,7 @@ const FTEManagement = () => {
                       }}
                       shouldDisableDate={(date) => date.getDay() === 0 || date.getDay() === 6}
                       minDate={selectedStartDate}
-                      renderInput={(params) => <TextField {...params} fullWidth />}
+                      slotProps={{ textField: { fullWidth: true } }}
                     />
                   </Grid>
                 </>
@@ -424,13 +424,13 @@ const FTEManagement = () => {
                     label="Od"
                     value={dateRange.start}
                     onChange={(newValue) => setDateRange({...dateRange, start: newValue})}
-                    renderInput={(params) => <TextField {...params} size="small" sx={{ width: 150 }} />}
+                    slotProps={{ textField: { size: 'small', sx: { width: 150 } } }}
                   />
                   <DatePicker
                     label="Do"
                     value={dateRange.end}
                     onChange={(newValue) => setDateRange({...dateRange, end: newValue})}
-                    renderInput={(params) => <TextField {...params} size="small" sx={{ width: 150 }} />}
+                    slotProps={{ textField: { size: 'small', sx: { width: 150 } } }}
                   />
                   <Button
                     variant="outlined"
